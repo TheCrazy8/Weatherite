@@ -202,12 +202,11 @@ OPENWEATHERMAP_LAYERS = [
     ("None", None),
     ("Clouds", "clouds_new"),
     ("Precipitation", "precipitation_new"),
-    ("Pressure", "pressure_new"),
     ("Wind", "wind_new"),
     ("Temperature", "temp_new"),
 ]
 
-def get_openweathermap_onecall_map(lat, lon, layer, api_key):
+def get_openweathermap_onecall_map(lat, lon, layer, owm_api_key):
     # Use OpenWeatherMap One Call API 3.0 for weather overlays on map
     # We'll use the tile endpoint with coordinates and layer
     # Docs: https://openweathermap.org/api/weathermaps#examples
@@ -217,8 +216,7 @@ def get_openweathermap_onecall_map(lat, lon, layer, api_key):
     if not layer:
         return get_google_static_map(lat, lon)
     url = (
-        f"https://maps.openweathermap.org/maps/2.0/weather/{layer}/"
-        f"10/{lon}/{lat}?appid={api_key}&width=450&height=450"
+        f"https://tile.openweathermap.org/map/{layer}/10/{lat}/{lon}.png?appid={owm_api_key}"
     )
     try:
         response = requests.get(url)
