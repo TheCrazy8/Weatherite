@@ -281,7 +281,7 @@ def show_weather():
                     return x_tile, y_tile
                 zoom = 10
                 x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
-                img_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}{layer_code}/now.png?apikey={tomorrow_api_key}"
+                img_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}"
             else:
                 # Fallback to Yandex Static Map
                 img_url = (
