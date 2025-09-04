@@ -272,7 +272,7 @@ def show_weather():
             layer = layer_var.get()
             layer_code = next((code for name, code in OPENWEATHERMAP_LAYERS if name == layer), None)
             img_data = get_openweathermap_onecall_map(lat, lon, layer_code, owm_api_key)
-            if img_data:
+            if True:
                 img = Image.open(io.BytesIO(img_data))
                 img = img.resize((450, 450))
                 tk_img = ImageTk.PhotoImage(img)
