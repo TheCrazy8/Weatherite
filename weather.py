@@ -334,7 +334,12 @@ def show_weather():
             layer = layer_var.get()
             zoom = int(zoom_var.get())
             layer_code = tomorrow_layers.get(layer, None)
-            img_url = None
+            # Get Yandex base map URL
+            yandex_url = (
+                f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z={zoom}&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
+            )
+            # Get Tomorrow.io overlay URL (if selected)
+            overlay_url = None
             if tomorrow_api_key and layer_code:
                 import math
                 def latlon_to_tile(lat, lon, zoom):
@@ -344,59 +349,37 @@ def show_weather():
                     y_tile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
                     return x_tile, y_tile
                 x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
-                img_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}"
-            else:
-                img_url = (
-                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z={zoom}&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
-                )
-            def try_load_image(url):
+                overlay_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}"
+            def get_image(url):
                 try:
                     response = requests.get(url)
-                    content_type = response.headers.get('Content-Type', '')
-                    if response.status_code == 200 and content_type.startswith('image/png'):
-                        img_data = response.content
-                        tk_img = None
-                        pil_error = None
-                        tk_error = None
-                        try:
-                            img = Image.open(io.BytesIO(img_data))
-                            img = img.resize((450, 450))
-                            tk_img = ImageTk.PhotoImage(img)
-                        except Exception as e:
-                            pil_error = str(e)
-                            print(f"PIL error: {pil_error}")
-                            try:
-                                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                                    tmp.write(img_data)
-                                    tmp_path = tmp.name
-                                tk_img = tk.PhotoImage(file=tmp_path)
-                                os.unlink(tmp_path)
-                            except Exception as e2:
-                                tk_error = str(e2)
-                                print(f"Tkinter PhotoImage error: {tk_error}")
-                                tk_img = None
-                        if tk_img:
-                            map_panel.config(image=tk_img, text='')
-                            map_panel.image = tk_img
-                            return True
-                        else:
-                            if pil_error:
-                                map_panel.config(image='', text=f'Map not available (PIL error)')
-                            elif tk_error:
-                                map_panel.config(image='', text=f'Map not available (Tkinter error)')
-                            else:
-                                map_panel.config(image='', text='Map not available (unknown image error)')
-                            return False
-                    else:
-                        print(f"Map download error: status={response.status_code}, content_type={content_type}")
-                        print(f"Response head: {response.content[:200]}")
-                        return False
+                    if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/png'):
+                        return Image.open(io.BytesIO(response.content)).convert('RGBA')
                 except Exception as e:
-                    print(f"Network error: {e}")
-                    return False
-            success = try_load_image(img_url)
-            if not success:
-                map_panel.config(image='', text='Map not available (Tomorrow.io/Yandex error)')
+                    print(f"Image download error: {e}")
+                return None
+            # Download base map
+            base_img = get_image(yandex_url)
+            # Download overlay if needed
+            overlay_img = get_image(overlay_url) if overlay_url else None
+            # Composite overlay on base map
+            final_img = None
+            if base_img and overlay_img:
+                # Resize overlay to match base map if needed
+                overlay_img = overlay_img.resize(base_img.size, Image.ANTIALIAS)
+                final_img = base_img.copy()
+                final_img.alpha_composite(overlay_img)
+            elif base_img:
+                final_img = base_img
+            elif overlay_img:
+                final_img = overlay_img
+            # Display result
+            if final_img:
+                tk_img = ImageTk.PhotoImage(final_img)
+                map_panel.config(image=tk_img, text='')
+                map_panel.image = tk_img
+            else:
+                map_panel.config(image='', text='Map not available (download/content error)')
         else:
             map_panel.config(image='', text='Map not available (no coordinates)')
     threading.Thread(target=update_map, daemon=True).start()
