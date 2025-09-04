@@ -279,8 +279,7 @@ def show_weather():
             img_url = None
             if not layer_code:
                 img_url = (
-                    f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}"
-                    f"&zoom=10&size=450x450&maptype=mapnik&markers={lat},{lon},red-pushpin"
+                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm"
                 )
             else:
                 img_url = (
