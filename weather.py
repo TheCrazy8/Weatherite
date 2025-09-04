@@ -254,7 +254,7 @@ def show_weather():
         if lat is not None and lon is not None:
             layer = layer_var.get()
             # Tomorrow.io Map Tiles API: https://docs.tomorrow.io/reference/get-map-tiles
-            # Example endpoint: https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey=YOUR_API_KEY
+            # Example endpoint: https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}{layer_code}/now.png?apikey={tomorrow_api_key}
             # For static image, use their static endpoint (simulate tile for center)
             # We'll use zoom=10, size=450x450, and center on lat/lon
             # Supported layers: precipitationIntensity, temperature, windSpeed, etc.
@@ -281,7 +281,7 @@ def show_weather():
                     return x_tile, y_tile
                 zoom = 10
                 x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
-                img_url = f"https://api.tomorrow.io/v4/map/tile/{layer_code}/{zoom}/{x_tile}/{y_tile}.png?apikey={tomorrow_api_key}"
+                img_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}{layer_code}/now.png?apikey={tomorrow_api_key}"
             else:
                 # Fallback to Yandex Static Map
                 img_url = (
