@@ -402,13 +402,6 @@ if __name__ == "__main__":
     layer_dropdown.pack(side=tk.LEFT)
     layer_dropdown.set(tomorrow_layers[0])
 
-    # Add Tomorrow.io API key entry
-    tomorrow_frame = ttk.Frame(top_frame)
-    tomorrow_frame.pack(side=tk.LEFT, padx=10)
-    ttk.Label(tomorrow_frame, text="Tomorrow.io API Key:").pack(side=tk.LEFT)
-    tomorrow_entry = ttk.Entry(tomorrow_frame, width=32)
-    tomorrow_entry.pack(side=tk.LEFT)
-
     search_btn = ttk.Button(top_frame, text="Get Weather", command=show_weather)
     search_btn.pack(side=tk.LEFT, padx=10)
 
