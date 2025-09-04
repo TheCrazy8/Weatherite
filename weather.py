@@ -187,7 +187,7 @@ def get_google_static_map(lat, lon):
     # Yandex Static Maps API (no API key required)
     # See: https://yandex.com/dev/maps/staticapi/doc/1.x/dg/concepts/map_params.html
     url = (
-        f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm"
+        f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
     )
     try:
         response = requests.get(url)
@@ -244,7 +244,7 @@ def show_weather():
         messagebox.showerror("Error", "Please enter a city name.")
         return
     api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
-    owm_api_key = "2bec1d433dfa98155ec31decddce56a5"  # <-- Replace with your OpenWeatherMap API key
+    owm_api_key = "582ada7227608c9fe3fd9c2d29ac5289"  # <-- Replace with your OpenWeatherMap API key
     vc_current, vc_forecast, vc_alerts = get_weather_visualcrossing(city, api_key, units, forecast_type)
     lat, lon = get_coordinates(city)
     om_current = ""
