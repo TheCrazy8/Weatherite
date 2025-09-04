@@ -263,19 +263,6 @@ def get_tomorrow_icon_url(code):
     if code is not None:
         return f"https://assets.tomorrow.io/images/icons/condition/{code}.png"
     return None
-# Tomorrow.io layers supported
-tomorrow_layers = {
-    "None": None,
-    "Precipitation Intensity": "precipitationIntensity",
-    "Temperature": "temperature",
-    "Wind Speed": "windSpeed",
-    "Cloud Cover": "cloudCover",
-    "Pressure": "pressure",
-    "Wind Direction": "windDirection",
-    "Visibility": "visibility",
-    "Thunderstorm Probability": "thunderstormProbability",
-    "Dew Point": "dewPoint",
-}
 
 def show_weather():
     city = city_entry.get()
@@ -460,6 +447,20 @@ if __name__ == "__main__":
     )
     forecast_dropdown.pack(side=tk.LEFT)
     forecast_dropdown.set(forecast_options[0][0])
+
+    tomorrow_layers = {
+    "None": None,
+    "Precipitation Intensity": "precipitationIntensity",
+    "Temperature": "temperature",
+    "Wind Speed": "windSpeed",
+    "Cloud Cover": "cloudCover",
+    "Pressure": "pressure",
+    "Wind Direction": "windDirection",
+    "Visibility": "visibility",
+    "Thunderstorm Probability": "thunderstormProbability",
+    "Dew Point": "dewPoint",
+    "Humidity": "humidity",
+    }
 
     # Add layer selector dropdown for Tomorrow.io overlays
     layer_var = tk.StringVar(value="None")
