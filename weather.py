@@ -462,6 +462,20 @@ if __name__ == "__main__":
     "Humidity": "humidity",
     }
 
+    tomorrow_layers2 = [
+        "None",
+        "Precipitation Intensity",
+        "Temperature",
+        "Wind Speed",
+        "Cloud Cover",
+        "Pressure",
+        "Wind Direction",
+        "Visibility",
+        "Thunderstorm Probability",
+        "Dew Point",
+        "Humidity",
+    ]
+
     # Add layer selector dropdown for Tomorrow.io overlays
     layer_var = tk.StringVar(value="None")
     layer_frame = ttk.Frame(top_frame)
@@ -470,12 +484,12 @@ if __name__ == "__main__":
     layer_dropdown = ttk.Combobox(
         layer_frame,
         textvariable=layer_var,
-        values=tomorrow_layers,
+        values=tomorrow_layers2,
         state="readonly",
         width=12
     )
     layer_dropdown.pack(side=tk.LEFT)
-    layer_dropdown.set(tomorrow_layers[0])
+    layer_dropdown.set(tomorrow_layers2[0])
 
     # Add zoom level dropdown
     zoom_var = tk.IntVar(value=10)
