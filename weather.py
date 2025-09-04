@@ -7,6 +7,8 @@ from datetime import datetime
 from PIL import Image, ImageTk
 import io
 import threading
+import tempfile
+import os
 
 
 def get_coordinates(city):
@@ -276,14 +278,19 @@ def show_weather():
             layer_code = next((code for name, code in OPENWEATHERMAP_LAYERS if name == layer), None)
             img_data = get_openweathermap_onecall_map(lat, lon, layer_code, owm_api_key)
             if img_data:
+                tk_img = None
                 try:
                     img = Image.open(io.BytesIO(img_data))
                     img = img.resize((450, 450))
                     tk_img = ImageTk.PhotoImage(img)
                 except Exception:
-                    # Fallback to Tkinter PhotoImage (supports PNG)
+                    # Fallback: save to temp file and load with PhotoImage(file=...)
                     try:
-                        tk_img = tk.PhotoImage(data=img_data)
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                            tmp.write(img_data)
+                            tmp_path = tmp.name
+                        tk_img = tk.PhotoImage(file=tmp_path)
+                        os.unlink(tmp_path)
                     except Exception:
                         tk_img = None
                 if tk_img:
