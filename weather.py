@@ -207,27 +207,6 @@ OPENWEATHERMAP_LAYERS = [
     ("Temperature", "temp_new"),
 ]
 
-def get_openweathermap_onecall_map(lat, lon, layer, owm_api_key):
-    # Use OpenWeatherMap One Call API 3.0 for weather overlays on map
-    # We'll use the tile endpoint with coordinates and layer
-    # Docs: https://openweathermap.org/api/weathermaps#examples
-    # The tile endpoint requires x/y/z tile coordinates, but for a static image, we use their static map endpoint
-    # For demo, use zoom=10, size=450x450
-    # The endpoint: https://maps.openweathermap.org/maps/2.0/weather/{layer}/10/{lon}/{lat}?appid={api_key}&width=450&height=450
-    if not layer:
-        return get_google_static_map(lat, lon)
-    url = (
-        f"https://maps.openweathermap.org/maps/2.0/weather/{layer}/"
-        f"10/{lon}/{lat}?appid={owm_api_key}&width=450&height=450"
-    )
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return response.content
-    except Exception:
-        pass
-    return None
-
 def show_weather():
     city = city_entry.get()
     units = units_var.get()
@@ -244,7 +223,7 @@ def show_weather():
         messagebox.showerror("Error", "Please enter a city name.")
         return
     api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
-    owm_api_key = "582ada7227608c9fe3fd9c2d29ac5289"  # <-- Replace with your OpenWeatherMap API key
+    tomorrow_api_key = tomorrow_entry.get().strip()  # Tomorrow.io API key from UI
     vc_current, vc_forecast, vc_alerts = get_weather_visualcrossing(city, api_key, units, forecast_type)
     lat, lon = get_coordinates(city)
     om_current = ""
@@ -274,16 +253,39 @@ def show_weather():
     def update_map():
         if lat is not None and lon is not None:
             layer = layer_var.get()
-            layer_code = next((code for name, code in OPENWEATHERMAP_LAYERS if name == layer), None)
+            # Tomorrow.io Map Tiles API: https://docs.tomorrow.io/reference/get-map-tiles
+            # Example endpoint: https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey=YOUR_API_KEY
+            # For static image, use their static endpoint (simulate tile for center)
+            # We'll use zoom=10, size=450x450, and center on lat/lon
+            # Supported layers: precipitationIntensity, temperature, windSpeed, etc.
+            tomorrow_layers = {
+                "None": None,
+                "Precipitation": "precipitationIntensity",
+                "Temperature": "temperature",
+                "Wind": "windSpeed",
+                "Clouds": "cloudCover",
+                "Pressure": "pressure",
+            }
+            layer_code = tomorrow_layers.get(layer, None)
             img_url = None
-            if not layer_code:
+            if tomorrow_api_key and layer_code:
+                # Tomorrow.io static map endpoint (simulate tile for center)
+                # Note: Tomorrow.io does not provide a direct static map API, but you can use their tile API for a single tile
+                # Calculate tile x/y for lat/lon at zoom 10
+                import math
+                def latlon_to_tile(lat, lon, zoom):
+                    lat_rad = math.radians(lat)
+                    n = 2.0 ** zoom
+                    x_tile = int((lon + 180.0) / 360.0 * n)
+                    y_tile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+                    return x_tile, y_tile
+                zoom = 10
+                x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
+                img_url = f"https://api.tomorrow.io/v4/map/tile/{layer_code}/{zoom}/{x_tile}/{y_tile}.png?apikey={tomorrow_api_key}"
+            else:
+                # Fallback to Yandex Static Map
                 img_url = (
                     f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
-                )
-            else:
-                img_url = (
-                    f"https://maps.openweathermap.org/maps/2.0/weather/{layer_code}/"
-                    f"10/{lon}/{lat}?appid={owm_api_key}&width=450&height=450"
                 )
             def try_load_image(url):
                 try:
@@ -330,19 +332,9 @@ def show_weather():
                 except Exception as e:
                     print(f"Network error: {e}")
                     return False
-            # Try main map endpoint
             success = try_load_image(img_url)
-            # Fallback for OpenWeatherMap layer: try 1.0 endpoint if 2.0 fails
-            if layer_code and not success:
-                fallback_url = (
-                    f"https://tile.openweathermap.org/map/{layer_code}/10/{lat}/{lon}.png?appid={owm_api_key}"
-                )
-                print(f"Trying OpenWeatherMap fallback: {fallback_url}")
-                success = try_load_image(fallback_url)
-                if not success:
-                    map_panel.config(image='', text='Map not available (OpenWeatherMap fallback failed)')
-            elif not layer_code and not success:
-                map_panel.config(image='', text='Map not available (download/content error)')
+            if not success:
+                map_panel.config(image='', text='Map not available (Tomorrow.io/Yandex error)')
         else:
             map_panel.config(image='', text='Map not available (no coordinates)')
     threading.Thread(target=update_map, daemon=True).start()
@@ -394,20 +386,28 @@ if __name__ == "__main__":
     forecast_dropdown.pack(side=tk.LEFT)
     forecast_dropdown.set(forecast_options[0][0])
 
-    # Add layer selector dropdown for OpenWeatherMap overlays
+    # Add layer selector dropdown for Tomorrow.io overlays
     layer_var = tk.StringVar(value="None")
     layer_frame = ttk.Frame(top_frame)
     layer_frame.pack(side=tk.LEFT, padx=10)
     ttk.Label(layer_frame, text="Map Layer:").pack(side=tk.LEFT)
+    tomorrow_layers = ["None", "Precipitation", "Temperature", "Wind", "Clouds", "Pressure"]
     layer_dropdown = ttk.Combobox(
         layer_frame,
         textvariable=layer_var,
-        values=[name for name, _ in OPENWEATHERMAP_LAYERS],
+        values=tomorrow_layers,
         state="readonly",
         width=12
     )
     layer_dropdown.pack(side=tk.LEFT)
-    layer_dropdown.set(OPENWEATHERMAP_LAYERS[0][0])
+    layer_dropdown.set(tomorrow_layers[0])
+
+    # Add Tomorrow.io API key entry
+    tomorrow_frame = ttk.Frame(top_frame)
+    tomorrow_frame.pack(side=tk.LEFT, padx=10)
+    ttk.Label(tomorrow_frame, text="Tomorrow.io API Key:").pack(side=tk.LEFT)
+    tomorrow_entry = ttk.Entry(tomorrow_frame, width=32)
+    tomorrow_entry.pack(side=tk.LEFT)
 
     search_btn = ttk.Button(top_frame, text="Get Weather", command=show_weather)
     search_btn.pack(side=tk.LEFT, padx=10)
