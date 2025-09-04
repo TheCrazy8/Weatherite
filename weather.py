@@ -207,6 +207,63 @@ OPENWEATHERMAP_LAYERS = [
     ("Temperature", "temp_new"),
 ]
 
+def get_tomorrow_weathercodefullday(lat, lon, api_key):
+    # Tomorrow.io Timeline API: https://docs.tomorrow.io/reference/timelines
+    # We'll get weatherCodeFullDay for today
+    url = (
+        f"https://api.tomorrow.io/v4/timelines?location={lat},{lon}"
+        f"&fields=weatherCodeFullDay"
+        f"&timesteps=1d"
+        f"&units=metric"
+        f"&apikey={api_key}"
+    )
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            intervals = data.get('data', {}).get('timelines', [{}])[0].get('intervals', [])
+            if intervals:
+                code = intervals[0]['values'].get('weatherCodeFullDay')
+                return code
+    except Exception as e:
+        print(f"Tomorrow.io weatherCodeFullDay error: {e}")
+    return None
+
+# Mapping of Tomorrow.io weather codes to descriptions and icons
+TOMORROW_WEATHER_CODES = {
+    1000: ("Clear", "☀️"),
+    1100: ("Mostly Clear", "🌤️"),
+    1101: ("Partly Cloudy", "⛅"),
+    1102: ("Mostly Cloudy", "🌥️"),
+    1001: ("Cloudy", "☁️"),
+    2000: ("Fog", "🌫️"),
+    2100: ("Light Fog", "🌫️"),
+    4000: ("Drizzle", "🌦️"),
+    4001: ("Rain", "🌧️"),
+    4200: ("Light Rain", "🌦️"),
+    4201: ("Heavy Rain", "🌧️"),
+    5000: ("Snow", "❄️"),
+    5001: ("Flurries", "🌨️"),
+    5100: ("Light Snow", "🌨️"),
+    5101: ("Heavy Snow", "❄️"),
+    6000: ("Freezing Drizzle", "🌧️"),
+    6001: ("Freezing Rain", "🌧️"),
+    6200: ("Light Freezing Rain", "🌧️"),
+    6201: ("Heavy Freezing Rain", "🌧️"),
+    7000: ("Ice Pellets", "🧊"),
+    7101: ("Heavy Ice Pellets", "🧊"),
+    7102: ("Light Ice Pellets", "🧊"),
+    8000: ("Thunderstorm", "⛈️"),
+}
+
+def get_tomorrow_icon_url(code):
+    # Tomorrow.io official icons: https://docs.tomorrow.io/reference/data-weather-codes
+    # Example: https://assets.tomorrow.io/images/icons/condition/{code}.png
+    # PNG icons are available for each code
+    if code is not None:
+        return f"https://assets.tomorrow.io/images/icons/condition/{code}.png"
+    return None
+
 def show_weather():
     city = city_entry.get()
     units = units_var.get()
@@ -227,6 +284,8 @@ def show_weather():
     vc_current, vc_forecast, vc_alerts = get_weather_visualcrossing(city, api_key, units, forecast_type)
     lat, lon = get_coordinates(city)
     om_current = ""
+    tomorrow_icon_img = None
+    tomorrow_desc = ""
     if lat is not None and lon is not None:
         om_data = get_weather_openmeteo(lat, lon, units)
         if "--- 3-Day Forecast ---" in om_data:
@@ -234,13 +293,33 @@ def show_weather():
             om_current = om_parts[0]
         else:
             om_current = om_data
+        # Get Tomorrow.io weatherCodeFullDay
+        code = get_tomorrow_weathercodefullday(lat, lon, tomorrow_api_key)
+        if code is not None:
+            tomorrow_desc = TOMORROW_WEATHER_CODES.get(code, (f"Unknown ({code})", ""))[0]
+            icon_url = get_tomorrow_icon_url(code)
+            if icon_url:
+                try:
+                    response = requests.get(icon_url)
+                    if response.status_code == 200:
+                        img_data = response.content
+                        img = Image.open(io.BytesIO(img_data)).resize((48, 48))
+                        tomorrow_icon_img = ImageTk.PhotoImage(img)
+                except Exception as e:
+                    print(f"Tomorrow.io icon error: {e}")
     else:
         om_current = "Could not get coordinates for Open-Meteo."
     # Fill text areas
     current_text.config(state='normal')
     current_text.delete(1.0, tk.END)
     current_text.insert(tk.END, f"--- Visual Crossing ---\n{vc_current}\n--- Open-Meteo ---\n{om_current}")
+    if tomorrow_desc:
+        current_text.insert(tk.END, f"\n--- Tomorrow.io ---\nWeather: {tomorrow_desc}")
     current_text.config(state='disabled')
+    # Show icon in map_panel (or create a new label for icon)
+    if tomorrow_icon_img:
+        map_panel.image = tomorrow_icon_img
+        map_panel.config(image=tomorrow_icon_img)
     forecast_text.config(state='normal')
     forecast_text.delete(1.0, tk.END)
     forecast_text.insert(tk.END, f"{vc_forecast}")
@@ -253,25 +332,22 @@ def show_weather():
     def update_map():
         if lat is not None and lon is not None:
             layer = layer_var.get()
-            # Tomorrow.io Map Tiles API: https://docs.tomorrow.io/reference/get-map-tiles
-            # Example endpoint: https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}
-            # For static image, use their static endpoint (simulate tile for center)
-            # We'll use zoom=10, size=450x450, and center on lat/lon
-            # Supported layers: precipitationIntensity, temperature, windSpeed, etc.
+            zoom = int(zoom_var.get())
             tomorrow_layers = {
                 "None": None,
-                "Precipitation": "precipitationIntensity",
+                "Precipitation Intensity": "precipitationIntensity",
                 "Temperature": "temperature",
-                "Wind": "windSpeed",
-                "Clouds": "cloudCover",
+                "Wind Speed": "windSpeed",
+                "Cloud Cover": "cloudCover",
                 "Pressure": "pressure",
+                "Wind Direction": "windDirection",
+                "Visibility": "visibility",
+                "Thunderstorm Probability": "thunderstormProbability",
+                "Dew Point": "dewPoint",
             }
             layer_code = tomorrow_layers.get(layer, None)
             img_url = None
             if tomorrow_api_key and layer_code:
-                # Tomorrow.io static map endpoint (simulate tile for center)
-                # Note: Tomorrow.io does not provide a direct static map API, but you can use their tile API for a single tile
-                # Calculate tile x/y for lat/lon at zoom 10
                 import math
                 def latlon_to_tile(lat, lon, zoom):
                     lat_rad = math.radians(lat)
@@ -279,13 +355,11 @@ def show_weather():
                     x_tile = int((lon + 180.0) / 360.0 * n)
                     y_tile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
                     return x_tile, y_tile
-                zoom = 10
                 x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
                 img_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}"
             else:
-                # Fallback to Yandex Static Map
                 img_url = (
-                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
+                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z={zoom}&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
                 )
             def try_load_image(url):
                 try:
@@ -402,6 +476,22 @@ if __name__ == "__main__":
     layer_dropdown.pack(side=tk.LEFT)
     layer_dropdown.set(tomorrow_layers[0])
 
+    # Add zoom level dropdown
+    zoom_var = tk.IntVar(value=10)
+    zoom_frame = ttk.Frame(top_frame)
+    zoom_frame.pack(side=tk.LEFT, padx=10)
+    ttk.Label(zoom_frame, text="Zoom:").pack(side=tk.LEFT)
+    zoom_levels = [str(z) for z in range(5, 16)]
+    zoom_dropdown = ttk.Combobox(
+        zoom_frame,
+        textvariable=zoom_var,
+        values=zoom_levels,
+        state="readonly",
+        width=3
+    )
+    zoom_dropdown.pack(side=tk.LEFT)
+    zoom_dropdown.set(str(zoom_var.get()))
+
     search_btn = ttk.Button(top_frame, text="Get Weather", command=show_weather)
     search_btn.pack(side=tk.LEFT, padx=10)
 
@@ -426,6 +516,16 @@ if __name__ == "__main__":
     alerts_text.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
     map_panel = ttk.Label(area_frame, text='Weather map will appear here', anchor='center')
     map_panel.grid(row=1, column=3, sticky="nsew", padx=5, pady=5)
+
+    # Add API attributions
+    attribution_tomorrow = ttk.Label(area_frame, text='Powered by Tomorrow.io', font=("Segoe UI", 10, "italic"))
+    attribution_tomorrow.grid(row=2, column=3, sticky="se", padx=5, pady=2)
+    attribution_yandex = ttk.Label(area_frame, text='Map data © Yandex/Tomorrow.io', font=("Segoe UI", 10, "italic"))
+    attribution_yandex.grid(row=2, column=2, sticky="se", padx=5, pady=2)
+    attribution_openmeteo = ttk.Label(area_frame, text='Weather data © Open-Meteo', font=("Segoe UI", 10, "italic"))
+    attribution_openmeteo.grid(row=2, column=0, sticky="sw", padx=5, pady=2)
+    attribution_visualcrossing = ttk.Label(area_frame, text='Weather data © Visual Crossing', font=("Segoe UI", 10, "italic"))
+    attribution_visualcrossing.grid(row=2, column=1, sticky="sw", padx=5, pady=2)
 
     area_frame.columnconfigure(0, weight=1)
     area_frame.columnconfigure(1, weight=1)
