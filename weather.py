@@ -223,7 +223,7 @@ def show_weather():
         messagebox.showerror("Error", "Please enter a city name.")
         return
     api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
-    tomorrow_api_key = tomorrow_entry.get().strip()  # Tomorrow.io API key from UI
+    tomorrow_api_key = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"  # Tomorrow.io API key from UI
     vc_current, vc_forecast, vc_alerts = get_weather_visualcrossing(city, api_key, units, forecast_type)
     lat, lon = get_coordinates(city)
     om_current = ""
