@@ -184,11 +184,10 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
     return output_current, output_forecast, output_alerts
 
 def get_google_static_map(lat, lon):
-    # OpenStreetMap static map with marker (no API key required)
-    # See: https://staticmap.openstreetmap.de/
+    # Yandex Static Maps API (no API key required)
+    # See: https://yandex.com/dev/maps/staticapi/doc/1.x/dg/concepts/map_params.html
     url = (
-        f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}"
-        f"&zoom=10&size=450x450&maptype=mapnik&markers={lat},{lon},red-pushpin"
+        f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm"
     )
     try:
         response = requests.get(url)
