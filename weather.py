@@ -279,11 +279,15 @@ def show_weather():
             img_data = get_openweathermap_onecall_map(lat, lon, layer_code, owm_api_key)
             if img_data:
                 tk_img = None
+                pil_error = None
+                tk_error = None
                 try:
                     img = Image.open(io.BytesIO(img_data))
                     img = img.resize((450, 450))
                     tk_img = ImageTk.PhotoImage(img)
-                except Exception:
+                except Exception as e:
+                    pil_error = str(e)
+                    print(f"PIL error: {pil_error}")
                     # Fallback: save to temp file and load with PhotoImage(file=...)
                     try:
                         with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
@@ -291,17 +295,25 @@ def show_weather():
                             tmp_path = tmp.name
                         tk_img = tk.PhotoImage(file=tmp_path)
                         os.unlink(tmp_path)
-                    except Exception:
+                    except Exception as e2:
+                        tk_error = str(e2)
+                        print(f"Tkinter PhotoImage error: {tk_error}")
                         tk_img = None
                 if tk_img:
                     map_panel.config(image=tk_img, text='')
                     map_panel.image = tk_img
                 else:
-                    map_panel.config(image='', text='Map not available (image error)')
+                    if pil_error:
+                        map_panel.config(image='', text=f'Map not available (PIL error)')
+                    elif tk_error:
+                        map_panel.config(image='', text=f'Map not available (Tkinter error)')
+                    else:
+                        map_panel.config(image='', text='Map not available (unknown image error)')
             else:
-                map_panel.config(image='', text='Map not available')
+                print("Map download/network error")
+                map_panel.config(image='', text='Map not available (download error)')
         else:
-            map_panel.config(image='', text='Map not available')
+            map_panel.config(image='', text='Map not available (no coordinates)')
     threading.Thread(target=update_map, daemon=True).start()
 
 if __name__ == "__main__":
