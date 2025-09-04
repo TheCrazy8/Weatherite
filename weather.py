@@ -182,9 +182,12 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
     return output_current, output_forecast, output_alerts
 
 def get_google_static_map(lat, lon):
-    # OpenStreetMap static map (no API key required)
+    # OpenStreetMap static map with marker (no API key required)
     # See: https://staticmap.openstreetmap.de/
-    url = f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=10&size=450x450&maptype=mapnik"
+    url = (
+        f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}"
+        f"&zoom=10&size=450x450&maptype=mapnik&markers={lat},{lon},red-pushpin"
+    )
     try:
         response = requests.get(url)
         if response.status_code == 200:
@@ -273,11 +276,21 @@ def show_weather():
             layer_code = next((code for name, code in OPENWEATHERMAP_LAYERS if name == layer), None)
             img_data = get_openweathermap_onecall_map(lat, lon, layer_code, owm_api_key)
             if img_data:
-                img = Image.open(io.BytesIO(img_data))
-                img = img.resize((450, 450))
-                tk_img = ImageTk.PhotoImage(img)
-                map_panel.config(image=tk_img)
-                map_panel.image = tk_img
+                try:
+                    img = Image.open(io.BytesIO(img_data))
+                    img = img.resize((450, 450))
+                    tk_img = ImageTk.PhotoImage(img)
+                except Exception:
+                    # Fallback to Tkinter PhotoImage (supports PNG)
+                    try:
+                        tk_img = tk.PhotoImage(data=img_data)
+                    except Exception:
+                        tk_img = None
+                if tk_img:
+                    map_panel.config(image=tk_img, text='')
+                    map_panel.image = tk_img
+                else:
+                    map_panel.config(image='', text='Map not available (image error)')
             else:
                 map_panel.config(image='', text='Map not available')
         else:
