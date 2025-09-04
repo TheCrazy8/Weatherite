@@ -275,59 +275,74 @@ def show_weather():
         if lat is not None and lon is not None:
             layer = layer_var.get()
             layer_code = next((code for name, code in OPENWEATHERMAP_LAYERS if name == layer), None)
-            # Download map image
             img_url = None
             if not layer_code:
                 img_url = (
-                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm"
+                    f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z=10&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
                 )
             else:
                 img_url = (
                     f"https://maps.openweathermap.org/maps/2.0/weather/{layer_code}/"
                     f"10/{lon}/{lat}?appid={owm_api_key}&width=450&height=450"
                 )
-            try:
-                response = requests.get(img_url)
-                content_type = response.headers.get('Content-Type', '')
-                if response.status_code == 200 and content_type.startswith('image/png'):
-                    img_data = response.content
-                    tk_img = None
-                    pil_error = None
-                    tk_error = None
-                    try:
-                        img = Image.open(io.BytesIO(img_data))
-                        img = img.resize((450, 450))
-                        tk_img = ImageTk.PhotoImage(img)
-                    except Exception as e:
-                        pil_error = str(e)
-                        print(f"PIL error: {pil_error}")
+            def try_load_image(url):
+                try:
+                    response = requests.get(url)
+                    content_type = response.headers.get('Content-Type', '')
+                    if response.status_code == 200 and content_type.startswith('image/png'):
+                        img_data = response.content
+                        tk_img = None
+                        pil_error = None
+                        tk_error = None
                         try:
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                                tmp.write(img_data)
-                                tmp_path = tmp.name
-                            tk_img = tk.PhotoImage(file=tmp_path)
-                            os.unlink(tmp_path)
-                        except Exception as e2:
-                            tk_error = str(e2)
-                            print(f"Tkinter PhotoImage error: {tk_error}")
-                            tk_img = None
-                    if tk_img:
-                        map_panel.config(image=tk_img, text='')
-                        map_panel.image = tk_img
-                    else:
-                        if pil_error:
-                            map_panel.config(image='', text=f'Map not available (PIL error)')
-                        elif tk_error:
-                            map_panel.config(image='', text=f'Map not available (Tkinter error)')
+                            img = Image.open(io.BytesIO(img_data))
+                            img = img.resize((450, 450))
+                            tk_img = ImageTk.PhotoImage(img)
+                        except Exception as e:
+                            pil_error = str(e)
+                            print(f"PIL error: {pil_error}")
+                            try:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                                    tmp.write(img_data)
+                                    tmp_path = tmp.name
+                                tk_img = tk.PhotoImage(file=tmp_path)
+                                os.unlink(tmp_path)
+                            except Exception as e2:
+                                tk_error = str(e2)
+                                print(f"Tkinter PhotoImage error: {tk_error}")
+                                tk_img = None
+                        if tk_img:
+                            map_panel.config(image=tk_img, text='')
+                            map_panel.image = tk_img
+                            return True
                         else:
-                            map_panel.config(image='', text='Map not available (unknown image error)')
-                else:
-                    print(f"Map download error: status={response.status_code}, content_type={content_type}")
-                    print(f"Response head: {response.content[:200]}")
-                    map_panel.config(image='', text='Map not available (download/content error)')
-            except Exception as e:
-                print(f"Network error: {e}")
-                map_panel.config(image='', text='Map not available (network error)')
+                            if pil_error:
+                                map_panel.config(image='', text=f'Map not available (PIL error)')
+                            elif tk_error:
+                                map_panel.config(image='', text=f'Map not available (Tkinter error)')
+                            else:
+                                map_panel.config(image='', text='Map not available (unknown image error)')
+                            return False
+                    else:
+                        print(f"Map download error: status={response.status_code}, content_type={content_type}")
+                        print(f"Response head: {response.content[:200]}")
+                        return False
+                except Exception as e:
+                    print(f"Network error: {e}")
+                    return False
+            # Try main map endpoint
+            success = try_load_image(img_url)
+            # Fallback for OpenWeatherMap layer: try 1.0 endpoint if 2.0 fails
+            if layer_code and not success:
+                fallback_url = (
+                    f"https://tile.openweathermap.org/map/{layer_code}/10/{lat}/{lon}.png?appid={owm_api_key}"
+                )
+                print(f"Trying OpenWeatherMap fallback: {fallback_url}")
+                success = try_load_image(fallback_url)
+                if not success:
+                    map_panel.config(image='', text='Map not available (OpenWeatherMap fallback failed)')
+            elif not layer_code and not success:
+                map_panel.config(image='', text='Map not available (download/content error)')
         else:
             map_panel.config(image='', text='Map not available (no coordinates)')
     threading.Thread(target=update_map, daemon=True).start()
