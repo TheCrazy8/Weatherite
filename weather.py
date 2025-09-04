@@ -263,6 +263,18 @@ def get_tomorrow_icon_url(code):
     if code is not None:
         return f"https://assets.tomorrow.io/images/icons/condition/{code}.png"
     return None
+tomorrow_layers = {
+    "None": None,
+    "Precipitation Intensity": "precipitationIntensity",
+    "Temperature": "temperature",
+    "Wind Speed": "windSpeed",
+    "Cloud Cover": "cloudCover",
+    "Pressure": "pressure",
+    "Wind Direction": "windDirection",
+    "Visibility": "visibility",
+    "Thunderstorm Probability": "thunderstormProbability",
+    "Dew Point": "dewPoint",
+}
 
 def show_weather():
     city = city_entry.get()
@@ -333,18 +345,6 @@ def show_weather():
         if lat is not None and lon is not None:
             layer = layer_var.get()
             zoom = int(zoom_var.get())
-            tomorrow_layers = {
-                "None": None,
-                "Precipitation Intensity": "precipitationIntensity",
-                "Temperature": "temperature",
-                "Wind Speed": "windSpeed",
-                "Cloud Cover": "cloudCover",
-                "Pressure": "pressure",
-                "Wind Direction": "windDirection",
-                "Visibility": "visibility",
-                "Thunderstorm Probability": "thunderstormProbability",
-                "Dew Point": "dewPoint",
-            }
             layer_code = tomorrow_layers.get(layer, None)
             img_url = None
             if tomorrow_api_key and layer_code:
@@ -465,7 +465,6 @@ if __name__ == "__main__":
     layer_frame = ttk.Frame(top_frame)
     layer_frame.pack(side=tk.LEFT, padx=10)
     ttk.Label(layer_frame, text="Map Layer:").pack(side=tk.LEFT)
-    tomorrow_layers = ["None", "Precipitation", "Temperature", "Wind", "Clouds", "Pressure"]
     layer_dropdown = ttk.Combobox(
         layer_frame,
         textvariable=layer_var,
