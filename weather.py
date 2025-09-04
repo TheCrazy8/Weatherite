@@ -263,6 +263,7 @@ def get_tomorrow_icon_url(code):
     if code is not None:
         return f"https://assets.tomorrow.io/images/icons/condition/{code}.png"
     return None
+# Tomorrow.io layers supported
 tomorrow_layers = {
     "None": None,
     "Precipitation Intensity": "precipitationIntensity",
