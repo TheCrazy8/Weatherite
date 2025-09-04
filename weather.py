@@ -257,11 +257,10 @@ TOMORROW_WEATHER_CODES = {
 }
 
 def get_tomorrow_icon_url(code):
-    # Tomorrow.io official icons: https://docs.tomorrow.io/reference/data-weather-codes
-    # Example: https://assets.tomorrow.io/images/icons/condition/{code}.png
-    # PNG icons are available for each code
+    # Use Tomorrow.io icons from GitHub repo
+    # Example: https://raw.githubusercontent.com/Tomorrow-IO-API/tomorrow-weather-codes/master/V2_icons/small/png/{code}_clear_small.png
     if code is not None:
-        return f"https://assets.tomorrow.io/images/icons/condition/{code}.png"
+        return f"https://raw.githubusercontent.com/Tomorrow-IO-API/tomorrow-weather-codes/master/V2_icons/small/png/{code}_clear_small.png"
     return None
 
 def show_weather():
@@ -366,7 +365,11 @@ def show_weather():
             final_img = None
             if base_img and overlay_img:
                 # Resize overlay to match base map if needed
-                overlay_img = overlay_img.resize(base_img.size, Image.ANTIALIAS)
+                try:
+                    resample = Image.Resampling.LANCZOS
+                except AttributeError:
+                    resample = Image.LANCZOS
+                overlay_img = overlay_img.resize(base_img.size, resample)
                 final_img = base_img.copy()
                 final_img.alpha_composite(overlay_img)
             elif base_img:
