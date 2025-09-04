@@ -182,10 +182,9 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
     return output_current, output_forecast, output_alerts
 
 def get_google_static_map(lat, lon):
-    # Google Static Maps API (no API key for basic usage, but limited)
-    # See: https://developers.google.com/maps/documentation/maps-static/overview
-    # This will show a basic map centered on the coordinates
-    url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=10&size=450x450&maptype=roadmap"
+    # OpenStreetMap static map (no API key required)
+    # See: https://staticmap.openstreetmap.de/
+    url = f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=10&size=450x450&maptype=mapnik"
     try:
         response = requests.get(url)
         if response.status_code == 200:
