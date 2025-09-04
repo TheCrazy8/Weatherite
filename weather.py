@@ -182,9 +182,10 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
     return output_current, output_forecast, output_alerts
 
 def get_google_static_map(lat, lon):
-    # OpenStreetMap static map (no API key required)
-    # See: https://staticmap.openstreetmap.de/
-    url = f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=10&size=450x450&maptype=mapnik"
+    # Google Static Maps API (no API key for basic usage, but limited)
+    # See: https://developers.google.com/maps/documentation/maps-static/overview
+    # This will show a basic map centered on the coordinates
+    url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=10&size=450x450&maptype=roadmap"
     try:
         response = requests.get(url)
         if response.status_code == 200:
@@ -227,7 +228,15 @@ def get_openweathermap_onecall_map(lat, lon, layer, api_key):
 def show_weather():
     city = city_entry.get()
     units = units_var.get()
-    forecast_type = forecast_var.get()
+    # Map forecast dropdown text to value
+    forecast_type = next((value for text, value in [
+        ('3-Day', '3day'),
+        ('5-Day', '5day'),
+        ('1 Hour', '1hour'),
+        ('12 Hour', '12hour'),
+        ('24 Hour', '24hour'),
+        ('Week', 'week'),
+    ] if text == forecast_var.get()), '3day')
     if not city:
         messagebox.showerror("Error", "Please enter a city name.")
         return
@@ -300,8 +309,8 @@ if __name__ == "__main__":
     imperial_radio = ttk.Radiobutton(units_frame, text="Imperial", variable=units_var, value='Imperial')
     imperial_radio.pack(side=tk.LEFT)
 
-    # Add forecast options
-    forecast_var = tk.StringVar(value='3day')
+    # Add forecast dropdown
+    forecast_var = tk.StringVar(value='3-Day')
     forecast_options = [
         ('3-Day', '3day'),
         ('5-Day', '5day'),
@@ -313,16 +322,30 @@ if __name__ == "__main__":
     forecast_frame = ttk.Frame(top_frame)
     forecast_frame.pack(side=tk.LEFT, padx=10)
     ttk.Label(forecast_frame, text="Forecast:").pack(side=tk.LEFT)
-    for text, value in forecast_options:
-        ttk.Radiobutton(forecast_frame, text=text, variable=forecast_var, value=value).pack(side=tk.LEFT)
+    forecast_dropdown = ttk.Combobox(
+        forecast_frame,
+        textvariable=forecast_var,
+        values=[text for text, value in forecast_options],
+        state="readonly",
+        width=10
+    )
+    forecast_dropdown.pack(side=tk.LEFT)
+    forecast_dropdown.set(forecast_options[0][0])
 
-    # Add layer selector for OpenWeatherMap overlays
+    # Add layer selector dropdown for OpenWeatherMap overlays
     layer_var = tk.StringVar(value="None")
     layer_frame = ttk.Frame(top_frame)
     layer_frame.pack(side=tk.LEFT, padx=10)
     ttk.Label(layer_frame, text="Map Layer:").pack(side=tk.LEFT)
-    for name, _ in OPENWEATHERMAP_LAYERS:
-        ttk.Radiobutton(layer_frame, text=name, variable=layer_var, value=name).pack(side=tk.LEFT)
+    layer_dropdown = ttk.Combobox(
+        layer_frame,
+        textvariable=layer_var,
+        values=[name for name, _ in OPENWEATHERMAP_LAYERS],
+        state="readonly",
+        width=12
+    )
+    layer_dropdown.pack(side=tk.LEFT)
+    layer_dropdown.set(OPENWEATHERMAP_LAYERS[0][0])
 
     search_btn = ttk.Button(top_frame, text="Get Weather", command=show_weather)
     search_btn.pack(side=tk.LEFT, padx=10)
