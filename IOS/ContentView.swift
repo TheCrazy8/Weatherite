@@ -100,3 +100,4 @@ struct CardView: View {
         .padding(.horizontal)
     }
 }
+
