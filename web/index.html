@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weather Web App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #181818; color: #fff; }
+        .card { background: #222; color: #fff; margin-bottom: 1rem; }
+        .form-control, .form-select { background: #222; color: #fff; border: 1px solid #444; }
+        .form-label { color: #bbb; }
+        .tomorrow-icon { width: 48px; height: 48px; margin-right: 8px; }
+        pre { color: #fff; background: #222; border: none; }
+    </style>
+</head>
+<body>
+<div class="container py-4">
+    <h1 class="mb-4">Weather Web App</h1>
+    <form id="weatherForm" class="mb-4">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <label class="form-label">City</label>
+                <input type="text" id="cityInput" class="form-control" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Units</label>
+                <select id="unitsSelect" class="form-select">
+                    <option value="Metric">Metric</option>
+                    <option value="Imperial">Imperial</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Get Weather</button>
+            </div>
+        </div>
+    </form>
+    <div id="results"></div>
+    <div class="text-muted mt-3">
+        Powered by Tomorrow.io | Map data © Yandex/Tomorrow.io | Weather data © Open-Meteo, Visual Crossing
+    </div>
+</div>
+<script>
+const VISUAL_CROSSING_API_KEY = "YOUR_VISUAL_CROSSING_API_KEY";
+const TOMORROW_API_KEY = "YOUR_TOMORROW_IO_API_KEY";
+
+const tomorrowWeatherCodes = {
+    1000: "Clear",
+    1100: "Mostly Clear",
+    1101: "Partly Cloudy",
+    1102: "Mostly Cloudy",
+    1001: "Cloudy",
+    2000: "Fog",
+    2100: "Light Fog",
+    4000: "Drizzle",
+    4001: "Rain",
+    4200: "Light Rain",
+    4201: "Heavy Rain",
+    5000: "Snow",
+    5001: "Flurries",
+    5100: "Light Snow",
+    5101: "Heavy Snow",
+    6000: "Freezing Drizzle",
+    6001: "Freezing Rain",
+    6200: "Light Freezing Rain",
+    6201: "Heavy Freezing Rain",
+    7000: "Ice Pellets",
+    7101: "Heavy Ice Pellets",
+    7102: "Light Ice Pellets",
+    8000: "Thunderstorm"
+};
+
+async function getCoordinates(city) {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`;
+    const res = await fetch(url);
+    if (!res.ok) return [null, null];
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+        return [data.results[0].latitude, data.results[0].longitude];
+    }
+    return [null, null];
+}
+
+async function getWeatherVisualCrossing(city, units) {
+    const unitGroup = units === "Imperial" ? "us" : "metric";
+    const url = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodeURIComponent(city)}?unitGroup=${unitGroup}&key=${VISUAL_CROSSING_API_KEY}&include=current,days,alerts,hours`;
+    const res = await fetch(url);
+    if (!res.ok) return ["City not found or API error.", "", ""];
+    const data = await res.json();
+    // Current
+    const current = data.currentConditions || {};
+    const tempUnit = units === "Imperial" ? "°F" : "°C";
+    const speedUnit = units === "Imperial" ? "mph" : "km/h";
+    const precipUnit = units === "Imperial" ? "in" : "mm";
+    const pressureUnit = units === "Imperial" ? "inHg" : "hPa";
+    const visUnit = units === "Imperial" ? "mi" : "km";
+    const now = new Date().toLocaleString();
+    let outputCurrent = `Current Date & Time: ${now}\nWeather in ${city}: ${current.conditions || "N/A"}\nTemperature: ${current.temp || "N/A"}${tempUnit} (Feels like: ${current.feelslike || "N/A"}${tempUnit})\nHumidity: ${current.humidity || "N/A"}%\nWind Speed: ${current.windspeed || "N/A"} ${speedUnit}\nPrecipitation: ${current.precip || "N/A"} ${precipUnit}\nPressure: ${current.pressure || "N/A"} ${pressureUnit}\nUV Index: ${current.uvindex || "N/A"}\nVisibility: ${current.visibility || "N/A"} ${visUnit}\nSunrise: ${current.sunrise || "N/A"}\nSunset: ${current.sunset || "N/A"}`;
+    // Forecast
+    let outputForecast = "Forecast:\n";
+    const days = data.days || [];
+    outputForecast += "3-Day Forecast:\n";
+    for (let i = 0; i < Math.min(3, days.length); i++) {
+        const day = days[i];
+        outputForecast += `${day.datetime || "N/A"}: ${day.description || "N/A"}\n  Max: ${day.tempmax || "N/A"}${tempUnit}, Min: ${day.tempmin || "N/A"}${tempUnit}\n`;
+    }
+    // Alerts
+    let outputAlerts = "";
+    const alerts = data.alerts || [];
+    if (alerts.length > 0) {
+        outputAlerts += "Weather Alerts:\n";
+        for (const alert of alerts) {
+            outputAlerts += `${alert.event || "Alert"}:\n  Starts: ${alert.onset || "N/A"}\n  Ends: ${alert.ends || "N/A"}\n  ${alert.description || ""}\n`;
+        }
+    } else {
+        outputAlerts += "No active weather alerts.\n";
+    }
+    return [outputCurrent, outputForecast, outputAlerts];
+}
+
+async function getWeatherOpenMeteo(lat, lon, units) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=cape,wind_speed_10m,wind_speed_80m,wind_speed_100m&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto`;
+    const res = await fetch(url);
+    if (!res.ok) return "API error or location not found.";
+    const data = await res.json();
+    const cape = data.hourly?.cape?.[0] ?? "N/A";
+    const wind10m = data.hourly?.wind_speed_10m?.[0] ?? "N/A";
+    const wind80m = data.hourly?.wind_speed_80m?.[0] ?? "N/A";
+    const wind100m = data.hourly?.wind_speed_100m?.[0] ?? "N/A";
+    const speedUnit = units === "Imperial" ? "mph" : "m/s";
+    let output = `CAPE: ${cape} J/kg\nWind Speed 10m: ${wind10m} ${speedUnit}\nWind Speed 80m: ${wind80m} ${speedUnit}\nWind Speed 100m: ${wind100m} ${speedUnit}\n`;
+    if (wind10m !== "N/A" && wind100m !== "N/A") {
+        try {
+            const shear = parseFloat(wind100m) - parseFloat(wind10m);
+            output += `Wind Shear (100m-10m): ${shear} ${speedUnit}\n`;
+        } catch {
+            output += "Wind Shear: N/A\n";
+        }
+    }
+    const daily = data.daily || {};
+    const dates = daily.time || [];
+    const tempmax = daily.temperature_2m_max || [];
+    const tempmin = daily.temperature_2m_min || [];
+    output += "\n--- 3-Day Forecast ---\n";
+    for (let i = 0; i < Math.min(3, dates.length); i++) {
+        output += `${dates[i]}: Max: ${tempmax[i]}° ${units === "Imperial" ? "F" : "C"}, Min: ${tempmin[i]}° ${units === "Imperial" ? "F" : "C"}\n`;
+    }
+    return output;
+}
+
+async function getTomorrowWeatherCode(lat, lon) {
+    const url = `https://api.tomorrow.io/v4/timelines?location=${lat},${lon}&fields=weatherCodeFullDay&timesteps=1d&units=metric&apikey=${TOMORROW_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const intervals = data.data?.timelines?.[0]?.intervals;
+    if (intervals && intervals.length > 0) {
+        return intervals[0].values.weatherCodeFullDay;
+    }
+    return null;
+}
+
+function getTomorrowIconUrl(code) {
+    if (code != null) {
+        return `https://raw.githubusercontent.com/Tomorrow-IO-API/tomorrow-weather-codes/master/V2_icons/small/png/${code}_clear_small.png`;
+    }
+    return null;
+}
+
+function getYandexMapUrl(lat, lon) {
+    return `https://static-maps.yandex.ru/1.x/?ll=${lon},${lat}&size=450,450&z=10&l=map&pt=${lon},${lat},pm2rdm&lang=en_US`;
+}
+
+const resultsDiv = document.getElementById('results');
+document.getElementById('weatherForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    resultsDiv.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+    const city = document.getElementById('cityInput').value;
+    const units = document.getElementById('unitsSelect').value;
+    const [lat, lon] = await getCoordinates(city);
+    if (!lat || !lon) {
+        resultsDiv.innerHTML = '<div class="alert alert-danger">Could not find coordinates for city.</div>';
+        return;
+    }
+    const [vcCurrent, vcForecast, vcAlerts] = await getWeatherVisualCrossing(city, units);
+    const omData = await getWeatherOpenMeteo(lat, lon, units);
+    const tomorrowCode = await getTomorrowWeatherCode(lat, lon);
+    const tomorrowDesc = tomorrowWeatherCodes[tomorrowCode] || `Unknown (${tomorrowCode})`;
+    const tomorrowIconUrl = getTomorrowIconUrl(tomorrowCode);
+    const mapUrl = getYandexMapUrl(lat, lon);
+    resultsDiv.innerHTML = `
+    <div class="card p-3">
+        <h4>Current Weather</h4>
+        <pre>${vcCurrent}</pre>
+        <h5>Open-Meteo</h5>
+        <pre>${omData}</pre>
+        ${tomorrowIconUrl ? `<div class="d-flex align-items-center mt-2"><img src="${tomorrowIconUrl}" class="tomorrow-icon" alt="Tomorrow.io Icon"><span>${tomorrowDesc}</span></div>` : ''}
+    </div>
+    <div class="card p-3">
+        <h4>Forecast</h4>
+        <pre>${vcForecast}</pre>
+    </div>
+    <div class="card p-3">
+        <h4>Weather Alerts</h4>
+        <pre>${vcAlerts}</pre>
+    </div>
+    <div class="card p-3">
+        <h4>Weather Map</h4>
+        <img src="${mapUrl}" class="img-fluid" alt="Weather Map">
+    </div>
+    `;
+});
+</script>
+</body>
+</html>
