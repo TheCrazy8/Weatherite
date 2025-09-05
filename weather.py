@@ -7,9 +7,6 @@ from datetime import datetime
 from PIL import Image, ImageTk
 import io
 import threading
-import tempfile
-import os
-
 
 def get_coordinates(city):
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"
