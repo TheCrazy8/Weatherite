@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+<LinearLayout
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <EditText
+        android:id="@+id/cityInput"
+        android:hint="Enter city name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+    <RadioGroup
+        android:id="@+id/unitsGroup"
+        android:orientation="horizontal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+        <RadioButton android:id="@+id/metricRadio" android:text="Metric"/>
+        <RadioButton android:id="@+id/imperialRadio" android:text="Imperial"/>
+    </RadioGroup>
+    <Spinner android:id="@+id/forecastSpinner" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Spinner android:id="@+id/layerSpinner" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Spinner android:id="@+id/zoomSpinner" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/searchBtn" android:text="Get Weather" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/currentWeather" android:text="Current Weather" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/forecastWeather" android:text="Forecast" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/alertsWeather" android:text="Weather Alerts" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <ImageView android:id="@+id/mapImage" android:layout_width="match_parent" android:layout_height="250dp"/>
+    <TextView android:text="Powered by Tomorrow.io" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:text="Map data © Yandex/Tomorrow.io" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:text="Weather data © Open-Meteo" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:text="Weather data © Visual Crossing" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+</LinearLayout>
+</ScrollView>
