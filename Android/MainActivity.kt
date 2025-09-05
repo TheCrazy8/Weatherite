@@ -23,8 +23,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tomorrowIconView: ImageView
     private lateinit var tomorrowDescView: TextView
 
-    private val visualCrossingApiKey = "YOUR_VISUAL_CROSSING_API_KEY"
-    private val tomorrowApiKey = "YOUR_TOMORROW_IO_API_KEY"
+    private val visualCrossingApiKey = "GD85JQAPJ8T44X8VKURGLFFD9"
+    private val tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

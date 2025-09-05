@@ -77,8 +77,8 @@ struct ContentView: View {
                 @State private var isLoading: Bool = false
                 @State private var errorMsg: String = ""
 
-                let visualCrossingApiKey = "YOUR_VISUAL_CROSSING_API_KEY"
-                let tomorrowApiKey = "YOUR_TOMORROW_IO_API_KEY"
+                let visualCrossingApiKey = "GD85JQAPJ8T44X8VKURGLFFD9"
+                let tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
 
                 var body: some View {
                     NavigationView {
