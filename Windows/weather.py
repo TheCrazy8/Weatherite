@@ -2,7 +2,6 @@ import requests
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 from tkinter import ttk
-from tkinterweb import HtmlFrame
 import sv_ttk
 from datetime import datetime
 from PIL import Image, ImageTk
@@ -533,12 +532,5 @@ if __name__ == "__main__":
     area_frame.rowconfigure(1, weight=1)
 
     sv_ttk.set_theme("dark")
-
-    # --- Unobtrusive Ad WebView (Google AdSense) ---
-    # Requires: pip install tkinterweb
-    
-    ad_webview = HtmlFrame(root, horizontal_scrollbar=False, vertical_scrollbar=False)
-    ad_webview.pack(side=tk.BOTTOM, fill=tk.X, padx=0, pady=0)
-    ad_webview.load_file("ad.html")
 
     root.mainloop()
