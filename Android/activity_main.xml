@@ -62,6 +62,16 @@
     <TextView android:text="Powered by Tomorrow.io" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#bbb" android:textSize="12sp" android:layout_marginTop="16dp"/>
     <TextView android:text="Map data © Yandex/Tomorrow.io" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#bbb" android:textSize="12sp"/>
     <TextView android:text="Weather data © Open-Meteo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#bbb" android:textSize="12sp"/>
-    <TextView android:text="Weather data © Visual Crossing" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#bbb" android:textSize="12sp"/>
+</LinearLayout>
+    <!-- Google Mobile Ads Banner -->
+    <com.google.android.gms.ads.AdView
+        android:id="@+id/adView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_gravity="center"
+        ads:adSize="BANNER"
+        ads:adUnitId="ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx" />
+</ScrollView>
 </LinearLayout>
 </ScrollView>

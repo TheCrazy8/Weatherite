@@ -4,6 +4,9 @@ import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import com.bumptech.glide.Glide
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.AdView
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONObject
@@ -22,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mapImage: ImageView
     private lateinit var tomorrowIconView: ImageView
     private lateinit var tomorrowDescView: TextView
+    private lateinit var adView: AdView
 
     private val visualCrossingApiKey = "GD85JQAPJ8T44X8VKURGLFFD9"
     private val tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
@@ -42,6 +46,12 @@ class MainActivity : AppCompatActivity() {
     mapImage = findViewById(R.id.mapImage)
     tomorrowIconView = findViewById(R.id.tomorrowIconView)
     tomorrowDescView = findViewById(R.id.tomorrowDescView)
+    adView = findViewById(R.id.adView)
+
+    // Initialize Mobile Ads SDK and load banner ad
+    MobileAds.initialize(this) {}
+    val adRequest = AdRequest.Builder().build()
+    adView.loadAd(adRequest)
 
         // Populate spinners
         val forecastOptions = arrayOf("3-Day", "5-Day", "1 Hour", "12 Hour", "24 Hour", "Week")
