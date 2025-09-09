@@ -65,26 +65,26 @@ struct ContentView: View {
                     }
                 }
                 // AdMob Banner Ad (unobtrusive, at bottom)
-                //BannerAdView(adUnitID: "ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx")
-                //    .frame(height: 50)
+                BannerAdView(adUnitID: "ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx")
+                    .frame(height: 50)
             }
             .navigationTitle("Weather App")
 
 
 // AdMob BannerAdView implementation
-//            struct BannerAdView: UIViewRepresentable {
-//                let adUnitID: String
-//            
-//                func makeUIView(context: Context) -> GADBannerView {
-//                    let banner = GADBannerView(adSize: kGADAdSizeBanner)
-//                    banner.adUnitID = adUnitID
-//                    banner.rootViewController = UIApplication.shared.windows.first?.rootViewController
-//                    banner.load(GADRequest())
-//                    return banner
-//                }
-//            
-//                func updateUIView(_ uiView: GADBannerView, context: Context) {}
-//            }
+            struct BannerAdView: UIViewRepresentable {
+                let adUnitID: String
+            
+                func makeUIView(context: Context) -> GADBannerView {
+                    let banner = GADBannerView(adSize: kGADAdSizeBanner)
+                    banner.adUnitID = adUnitID
+                    banner.rootViewController = UIApplication.shared.windows.first?.rootViewController
+                    banner.load(GADRequest())
+                    return banner
+                }
+            
+                func updateUIView(_ uiView: GADBannerView, context: Context) {}
+            }
 
             struct ContentView: View {
                 @State private var city: String = ""
