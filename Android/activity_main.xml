@@ -72,6 +72,16 @@
         android:layout_gravity="center"
         ads:adSize="BANNER"
         ads:adUnitId="ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx" />
+
+<TextView
+    android:id="@+id/visualCrossingAttribution"
+    android:text="Weather Data Provided by Visual Crossing"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:textColor="#1976D2"
+    android:textSize="12sp"
+    android:layout_marginTop="8dp"/>
+</TextView>
 </ScrollView>
 </LinearLayout>
 </ScrollView>

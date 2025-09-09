@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tomorrowIconView: ImageView
     private lateinit var tomorrowDescView: TextView
     private lateinit var adView: AdView
+    private lateinit var visualCrossingAttribution: TextView
 
     private val visualCrossingApiKey = "GD85JQAPJ8T44X8VKURGLFFD9"
     private val tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
@@ -47,6 +48,15 @@ class MainActivity : AppCompatActivity() {
     tomorrowIconView = findViewById(R.id.tomorrowIconView)
     tomorrowDescView = findViewById(R.id.tomorrowDescView)
     adView = findViewById(R.id.adView)
+    visualCrossingAttribution = findViewById(R.id.visualCrossingAttribution)
+    visualCrossingAttribution.setTextColor(0xFF1976D2.toInt())
+    visualCrossingAttribution.paint.isUnderlineText = true
+    visualCrossingAttribution.setOnClickListener {
+        val url = "https://www.visualcrossing.com/"
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+        intent.data = android.net.Uri.parse(url)
+        startActivity(intent)
+    }
 
     // Initialize Mobile Ads SDK and load banner ad
     MobileAds.initialize(this) {}
