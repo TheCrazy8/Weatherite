@@ -1,3 +1,13 @@
+import androidx.work.Worker
+import androidx.work.WorkerParameters
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 package com.example.weatherapp
 
 import android.os.Bundle
@@ -18,6 +28,63 @@ import org.json.JSONObject
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
+    override fun onStart() {
+        super.onStart()
+        scheduleBackgroundWeatherWorker()
+    }
+
+    private fun scheduleBackgroundWeatherWorker() {
+        val workRequest = PeriodicWorkRequestBuilder<WeatherWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(this).enqueue(workRequest)
+    }
+class WeatherWorker(appContext: android.content.Context, workerParams: WorkerParameters) : Worker(appContext, workerParams) {
+    override fun doWork(): Result {
+        // Example: fetch weather and send notifications
+        try {
+            // You may want to use SharedPreferences or a database for city/units
+            val city = "YourDefaultCity" // TODO: get from app state
+            val units = "Metric"
+            val client = OkHttpClient()
+            val url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${city}?unitGroup=metric&key=GD85JQAPJ8T44X8VKURGLFFD9&include=current,days,alerts,hours"
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            val json = JSONObject(body)
+            val alerts = json.optJSONArray("alerts")
+            if (alerts != null && alerts.length() > 0) {
+                val alert = alerts.getJSONObject(0)
+                sendNotification("Weather Alert", alert.optString("event", "Alert") + ": " + alert.optString("description", ""))
+            }
+            val forecast = json.optJSONArray("days")
+            if (forecast != null) {
+                for (i in 0 until minOf(3, forecast.length())) {
+                    val day = forecast.getJSONObject(i)
+                    val desc = day.optString("description", "")
+                    if (desc.lowercase().contains("rain") || desc.lowercase().contains("drizzle") || desc.lowercase().contains("snow")) {
+                        sendNotification("Upcoming Precipitation", desc)
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return Result.success()
+    }
+
+    private fun sendNotification(title: String, text: String) {
+        val channelId = "weather_channel"
+        val builder = NotificationCompat.Builder(applicationContext, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        with(NotificationManagerCompat.from(applicationContext)) {
+            notify(System.currentTimeMillis().toInt(), builder.build())
+        }
+    }
+}
+    private val CHANNEL_ID = "weather_channel"
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var currentLat: Double? = null
     private var currentLon: Double? = null
@@ -40,6 +107,7 @@ class MainActivity : AppCompatActivity() {
     private val tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
 
     override fun onCreate(savedInstanceState: Bundle?) {
+    createNotificationChannel()
     fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
     val useLocBtn = findViewById<Button>(R.id.useLocBtn)
     useLocBtn.setOnClickListener {
@@ -106,6 +174,31 @@ class MainActivity : AppCompatActivity() {
             val layer = layerSpinner.selectedItem.toString()
             val zoom = zoomSpinner.selectedItem.toString().toInt()
             fetchWeather(city, units, forecastType, layer, zoom)
+            sendWeatherNotification("Weather Updated", currentWeather.text.toString())
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Weather Updates"
+            val descriptionText = "Shows weather update notifications"
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+            val notificationManager: NotificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun sendWeatherNotification(title: String, text: String) {
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        with(NotificationManagerCompat.from(this)) {
+            notify(System.currentTimeMillis().toInt(), builder.build())
+        }
+    }
         }
     }
 

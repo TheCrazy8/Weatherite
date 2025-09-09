@@ -1,9 +1,62 @@
+import UserNotifications
+import BackgroundTasks
 
 import GoogleMobileAds
 import SwiftUI
 import CoreLocation
 
 struct ContentView: View {
+    // Register background task
+    func registerBackgroundTask() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.example.weatherapp.refresh", using: nil) { task in
+            handleAppRefresh(task: task as! BGAppRefreshTask)
+        }
+    }
+
+    func scheduleAppRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: "com.example.weatherapp.refresh")
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 900) // 15 minutes
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            print("Could not schedule app refresh: \(error)")
+        }
+    }
+
+    func handleAppRefresh(task: BGAppRefreshTask) {
+        scheduleAppRefresh()
+        Task {
+            await backgroundFetchWeather()
+        }
+        task.setTaskCompleted(success: true)
+    }
+    // Background fetch timer
+    @State private var backgroundTimer: Timer? = nil
+    // Notification permission request
+    func requestNotificationPermission() {
+        #if canImport(UserNotifications)
+        import UserNotifications
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("Notification permission error: \(error)")
+            }
+        }
+        #endif
+    }
+
+    // Send a local notification
+    func sendWeatherNotification(title: String, body: String) {
+        #if canImport(UserNotifications)
+        import UserNotifications
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        #endif
+    }
     @StateObject private var locationManager = LocationManager()
     @State private var useCurrentLoc: Bool = false
     @State private var city: String = ""
@@ -21,6 +74,10 @@ struct ContentView: View {
     let appGroupId = "group.com.example.weatherapp"
 
     var body: some View {
+        .onAppear {
+            registerBackgroundTask()
+            scheduleAppRefresh()
+        }
         NavigationView {
             VStack(spacing: 0) {
                 ScrollView {
@@ -45,7 +102,40 @@ struct ContentView: View {
                         .padding(.horizontal)
                         Button("Get Weather") {
                             fetchWeather()
+                            requestNotificationPermission()
+                            sendWeatherNotification(title: "Weather Updated", body: weatherData)
                         }
+                        .onAppear {
+                            requestNotificationPermission()
+                            startBackgroundFetch()
+                        }
+    // Start background fetch every 15 minutes
+    func startBackgroundFetch() {
+        backgroundTimer?.invalidate()
+        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { _ in
+            Task {
+                await backgroundFetchWeather()
+            }
+        }
+    }
+
+    // Background fetch logic
+    func backgroundFetchWeather() async {
+        do {
+            let (vcCurrent, vcForecast, vcAlerts) = try await getWeatherVisualCrossing(city: city, units: units)
+            let om = try await getWeatherOpenMeteo(lat: locationManager.location?.latitude ?? 0, lon: locationManager.location?.longitude ?? 0, units: units)
+            // Check for alerts
+            if !vcAlerts.contains("No active weather alerts") {
+                sendWeatherNotification(title: "Weather Alert", body: vcAlerts)
+            }
+            // Check for precipitation in forecast
+            if vcForecast.lowercased().contains("rain") || vcForecast.lowercased().contains("drizzle") || vcForecast.lowercased().contains("snow") {
+                sendWeatherNotification(title: "Upcoming Precipitation", body: vcForecast)
+            }
+        } catch {
+            print("Background fetch error: \(error)")
+        }
+    }
                         .padding()
                         if isLoading {
                             ProgressView()

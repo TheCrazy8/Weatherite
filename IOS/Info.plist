@@ -5,6 +5,14 @@
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>This app uses your location to show local weather.</string>
 
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>remote-notification</string>
+    </array>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>This app uses notifications to alert you about weather changes.</string>
+
     <key>CFBundleDisplayName</key>
     <string>WeatherApp</string>
     <key>CFBundleIdentifier</key>
