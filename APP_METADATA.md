@@ -13,7 +13,7 @@ WeatherApp provides accurate, real-time weather forecasts, maps, and alerts for 
 weather, forecast, map, alerts, location, Visual Crossing, Open-Meteo, Tomorrow.io, AdMob
 
 ## Support Email
-[your-support-email@example.com]
+[bennettbashford@gmail.com]
 
 ## Privacy Policy
 See [PRIVACY.md](./PRIVACY.md)
@@ -22,4 +22,4 @@ See [PRIVACY.md](./PRIVACY.md)
 See [TOS.md](./TOS.md)
 
 ## Contact
-For support or questions, contact [your-support-email@example.com]
+For support or questions, contact [bennettbashford@gmail.com]
