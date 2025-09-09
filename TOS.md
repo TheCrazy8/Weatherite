@@ -1,6 +1,6 @@
 # Terms of Service for 
 
-**Effective Date:** [Insert Date]
+**Effective Date:** 9/9/2025
 
 ## 1. Acceptance of Terms
 By using Weatherite, you agree to these Terms of Service. If you do not agree, do not use the app.

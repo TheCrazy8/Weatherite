@@ -1,6 +1,6 @@
 # Privacy Policy for Weatherite
 
-**Effective Date:** [Insert Date]
+**Effective Date:** 9/9/2025
 
 ## 1. Information We Collect
 - **Location Data:** We collect your device’s location (with your permission) to provide local weather information.
