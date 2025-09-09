@@ -1,3 +1,5 @@
+
+import GoogleMobileAds
 import SwiftUI
 
 struct ContentView: View {
@@ -14,55 +16,75 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    TextField("Enter city name", text: $city)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .padding(.horizontal)
-                    Picker("Units", selection: $units) {
-                        Text("Metric").tag("Metric")
-                        Text("Imperial").tag("Imperial")
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                    .padding(.horizontal)
-                    Button("Get Weather") {
-                        fetchWeather()
-                    }
-                    .padding()
-                    if isLoading {
-                        ProgressView()
-                    }
-                    if !weatherData.isEmpty {
-                        CardView(title: "Current Weather", content: weatherData)
-                        if !omData.isEmpty {
-                            CardView(title: "Open-Meteo", content: omData)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        TextField("Enter city name", text: $city)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .padding(.horizontal)
+                        Picker("Units", selection: $units) {
+                            Text("Metric").tag("Metric")
+                            Text("Imperial").tag("Imperial")
                         }
-                        if !tomorrowIconUrl.isEmpty {
-                            HStack {
-                                AsyncImage(url: URL(string: tomorrowIconUrl)) { image in
-                                    image.resizable().frame(width: 48, height: 48)
+                        .pickerStyle(SegmentedPickerStyle())
+                        .padding(.horizontal)
+                        Button("Get Weather") {
+                            fetchWeather()
+                        }
+                        .padding()
+                        if isLoading {
+                            ProgressView()
+                        }
+                        if !weatherData.isEmpty {
+                            CardView(title: "Current Weather", content: weatherData)
+                            if !omData.isEmpty {
+                                CardView(title: "Open-Meteo", content: omData)
+                            }
+                            if !tomorrowIconUrl.isEmpty {
+                                HStack {
+                                    AsyncImage(url: URL(string: tomorrowIconUrl)) { image in
+                                        image.resizable().frame(width: 48, height: 48)
+                                    } placeholder: {
+                                        ProgressView()
+                                    }
+                                    Text(tomorrowDesc)
+                                        .font(.headline)
+                                }
+                            }
+                            CardView(title: "Forecast", content: forecastData)
+                            CardView(title: "Weather Alerts", content: alertsData)
+                            if !mapUrl.isEmpty {
+                                CardView(title: "Weather Map", content: "")
+                                AsyncImage(url: URL(string: mapUrl)) { image in
+                                    image.resizable().aspectRatio(contentMode: .fit)
                                 } placeholder: {
                                     ProgressView()
                                 }
-                                Text(tomorrowDesc)
-                                    .font(.headline)
-                            }
-                        }
-                        CardView(title: "Forecast", content: forecastData)
-                        CardView(title: "Weather Alerts", content: alertsData)
-                        if !mapUrl.isEmpty {
-                            CardView(title: "Weather Map", content: "")
-                            AsyncImage(url: URL(string: mapUrl)) { image in
-                                image.resizable().aspectRatio(contentMode: .fit)
-                            } placeholder: {
-                                ProgressView()
                             }
                         }
                     }
                 }
+                // AdMob Banner Ad (unobtrusive, at bottom)
+                //BannerAdView(adUnitID: "ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx")
+                //    .frame(height: 50)
             }
+            .navigationTitle("Weather App")
 
-            import SwiftUI
+
+// AdMob BannerAdView implementation
+//            struct BannerAdView: UIViewRepresentable {
+//                let adUnitID: String
+//            
+//                func makeUIView(context: Context) -> GADBannerView {
+//                    let banner = GADBannerView(adSize: kGADAdSizeBanner)
+//                    banner.adUnitID = adUnitID
+//                    banner.rootViewController = UIApplication.shared.windows.first?.rootViewController
+//                    banner.load(GADRequest())
+//                    return banner
+//                }
+//            
+//                func updateUIView(_ uiView: GADBannerView, context: Context) {}
+//            }
 
             struct ContentView: View {
                 @State private var city: String = ""
