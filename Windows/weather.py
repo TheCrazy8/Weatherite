@@ -390,7 +390,7 @@ def show_weather():
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("Weather App")
+    root.title("Weatherite")
     root.state('zoomed')  # Fullscreen on Windows
 
     main_frame = ttk.Frame(root)

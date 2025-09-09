@@ -1,4 +1,4 @@
-# Privacy Policy for WeatherApp
+# Privacy Policy for Weatherite
 
 **Effective Date:** [Insert Date]
 
