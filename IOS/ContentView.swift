@@ -17,6 +17,9 @@ struct ContentView: View {
     @State private var tomorrowDesc: String = ""
     @State private var isLoading: Bool = false
 
+    // App Group for widget data sharing
+    let appGroupId = "group.com.example.weatherapp"
+
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
@@ -49,6 +52,8 @@ struct ContentView: View {
                         }
                         if !weatherData.isEmpty {
                             CardView(title: "Current Weather", content: weatherData)
+                            // Share weather data with widget
+                            updateWidgetWeather()
                             if !omData.isEmpty {
                                 CardView(title: "Open-Meteo", content: omData)
                             }
@@ -74,6 +79,38 @@ struct ContentView: View {
                                 }
                             }
                         }
+    // Function to update widget weather data
+    func updateWidgetWeather() {
+        let userDefaults = UserDefaults(suiteName: appGroupId)
+        // Example: parse temperature and condition from weatherData string
+        // You should adapt this to your actual data structure
+        let temp = parseTemperature(from: weatherData)
+        let cond = parseCondition(from: weatherData)
+        userDefaults?.setValue(temp, forKey: "widget_temperature")
+        userDefaults?.setValue(cond, forKey: "widget_condition")
+        userDefaults?.synchronize()
+        // Ask widget to reload
+        #if canImport(WidgetKit)
+        import WidgetKit
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
+    }
+
+    func parseTemperature(from data: String) -> String {
+        // Simple example: extract first number
+        let regex = try? NSRegularExpression(pattern: "(-?\\d+\\.?\\d*)")
+        if let match = regex?.firstMatch(in: data, options: [], range: NSRange(location: 0, length: data.utf16.count)),
+           let range = Range(match.range(at: 1), in: data) {
+            return String(data[range]) + "°C"
+        }
+        return "--°C"
+    }
+
+    func parseCondition(from data: String) -> String {
+        // Simple example: extract first word
+        let words = data.split(separator: " ")
+        return words.first.map { String($0) } ?? "Unknown"
+    }
                         // Visual Crossing attribution as clickable link
                         Link("Weather Data Provided by Visual Crossing", destination: URL(string: "https://www.visualcrossing.com/")!)
                             .font(.footnote)
