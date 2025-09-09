@@ -62,6 +62,11 @@ struct ContentView: View {
                                 }
                             }
                         }
+                        // Visual Crossing attribution as clickable link
+                        Link("Weather Data Provided by Visual Crossing", destination: URL(string: "https://www.visualcrossing.com/")!)
+                            .font(.footnote)
+                            .foregroundColor(Color.blue)
+                            .padding(.top, 8)
                     }
                 }
                 // AdMob Banner Ad (unobtrusive, at bottom)
@@ -69,8 +74,8 @@ struct ContentView: View {
                     .frame(height: 50)
             }
             .navigationTitle("Weather App")
-
-
+        }
+    }
 // AdMob BannerAdView implementation
             struct BannerAdView: UIViewRepresentable {
                 let adUnitID: String

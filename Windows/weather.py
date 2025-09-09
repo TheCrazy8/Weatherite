@@ -7,6 +7,7 @@ from datetime import datetime
 from PIL import Image, ImageTk
 import io
 import threading
+import webbrowser
 
 def get_coordinates(city):
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"
@@ -522,8 +523,12 @@ if __name__ == "__main__":
     attribution_yandex.grid(row=2, column=2, sticky="se", padx=5, pady=2)
     attribution_openmeteo = ttk.Label(area_frame, text='Weather data © Open-Meteo', font=("Segoe UI", 10, "italic"))
     attribution_openmeteo.grid(row=2, column=0, sticky="sw", padx=5, pady=2)
-    attribution_visualcrossing = ttk.Label(area_frame, text='Weather data © Visual Crossing', font=("Segoe UI", 10, "italic"))
+    # Visual Crossing attribution as clickable link
+    def open_visualcrossing():
+        webbrowser.open_new("https://www.visualcrossing.com/")
+    attribution_visualcrossing = ttk.Label(area_frame, text='Weather Data Provided by Visual Crossing', font=("Segoe UI", 10, "italic"), foreground="#1976D2", cursor="hand2")
     attribution_visualcrossing.grid(row=2, column=1, sticky="sw", padx=5, pady=2)
+    attribution_visualcrossing.bind("<Button-1>", lambda e: open_visualcrossing())
 
     area_frame.columnconfigure(0, weight=1)
     area_frame.columnconfigure(1, weight=1)
