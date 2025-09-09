@@ -2,6 +2,7 @@ import requests
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 from tkinter import ttk
+from tkinterweb import HtmlFrame
 import sv_ttk
 from datetime import datetime
 from PIL import Image, ImageTk
@@ -535,15 +536,9 @@ if __name__ == "__main__":
 
     # --- Unobtrusive Ad WebView (Google AdSense) ---
     # Requires: pip install tkinterweb
-    try:
-        from tkinterweb import HtmlFrame
-        ad_webview = HtmlFrame(root, horizontal_scrollbar=False, vertical_scrollbar=False)
-        ad_webview.pack(side=tk.BOTTOM, fill=tk.X, padx=0, pady=0)
-        ad_webview.load_file("ad.html")
-    except ImportError:
-        ad_frame = ttk.Frame(root)
-        ad_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=0, pady=0)
-        ad_label = ttk.Label(ad_frame, text="Advertisement (tkinterweb not installed)", font=("Segoe UI", 9, "italic"))
-        ad_label.pack(side=tk.LEFT, padx=10, pady=2)
+    
+    ad_webview = HtmlFrame(root, horizontal_scrollbar=False, vertical_scrollbar=False)
+    ad_webview.pack(side=tk.BOTTOM, fill=tk.X, padx=0, pady=0)
+    ad_webview.load_file("ad.html")
 
     root.mainloop()
