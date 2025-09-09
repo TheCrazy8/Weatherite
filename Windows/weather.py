@@ -279,7 +279,10 @@ def show_weather():
     api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
     tomorrow_api_key = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"  # Tomorrow.io API key from UI
     vc_current, vc_forecast, vc_alerts = get_weather_visualcrossing(city, api_key, units, forecast_type)
-    lat, lon = get_coordinates(city)
+    lat = getattr(city_entry, 'lat', None)
+    lon = getattr(city_entry, 'lon', None)
+    if lat is None or lon is None:
+        lat, lon = get_coordinates(city)
     om_current = ""
     tomorrow_icon_img = None
     tomorrow_desc = ""
@@ -400,6 +403,28 @@ if __name__ == "__main__":
     city_label.pack(side=tk.LEFT)
     city_entry = ttk.Entry(top_frame, width=30)
     city_entry.pack(side=tk.LEFT, padx=5)
+    def use_current_location():
+        try:
+            resp = requests.get("http://ip-api.com/json", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                lat = data.get("lat")
+                lon = data.get("lon")
+                city = data.get("city", "")
+                if lat is not None and lon is not None:
+                    city_entry.delete(0, tk.END)
+                    city_entry.insert(0, city)
+                    city_entry.lat = lat
+                    city_entry.lon = lon
+                    messagebox.showinfo("Location", f"Using current location: {city} ({lat}, {lon})")
+                else:
+                    messagebox.showerror("Location Error", "Could not get location coordinates.")
+            else:
+                messagebox.showerror("Location Error", "Could not get location.")
+        except Exception as e:
+            messagebox.showerror("Location Error", f"Error: {e}")
+    use_loc_btn = ttk.Button(top_frame, text="Use Current Location", command=use_current_location)
+    use_loc_btn.pack(side=tk.LEFT, padx=5)
 
     units_var = tk.StringVar(value='Metric')
     units_frame = ttk.Frame(top_frame)

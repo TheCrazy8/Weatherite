@@ -9,16 +9,27 @@
     android:layout_height="wrap_content"
     android:background="#121212">
 
-    <EditText
-        android:id="@+id/cityInput"
-        android:hint="Enter city name"
+    <LinearLayout
+        android:orientation="horizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#222"
-        android:textColor="#fff"
-        android:hintTextColor="#bbb"
-        android:padding="12dp"
-        android:textSize="18sp"/>
+        android:layout_height="wrap_content">
+        <EditText
+            android:id="@+id/cityInput"
+            android:hint="Enter city name"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:background="#222"
+            android:textColor="#fff"
+            android:hintTextColor="#bbb"
+            android:padding="12dp"
+            android:textSize="18sp"/>
+        <Button
+            android:id="@+id/useLocBtn"
+            android:text="Use Current Location"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
     <RadioGroup
         android:id="@+id/unitsGroup"
         android:orientation="horizontal"

@@ -7,12 +7,20 @@ import com.bumptech.glide.Glide
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.AdView
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONObject
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var currentLat: Double? = null
+    private var currentLon: Double? = null
     private lateinit var cityInput: EditText
     private lateinit var unitsGroup: RadioGroup
     private lateinit var forecastSpinner: Spinner
@@ -32,6 +40,24 @@ class MainActivity : AppCompatActivity() {
     private val tomorrowApiKey = "ku1mDhkjQlc8CRZkOzXr8wZ0BjTEUInB"
 
     override fun onCreate(savedInstanceState: Bundle?) {
+    fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+    val useLocBtn = findViewById<Button>(R.id.useLocBtn)
+    useLocBtn.setOnClickListener {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1001)
+        } else {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    currentLat = location.latitude
+                    currentLon = location.longitude
+                    cityInput.setText("Current Location")
+                    Toast.makeText(this, "Using current location: ($currentLat, $currentLon)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Could not get location.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -87,7 +113,11 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // 1. Get coordinates
-                val (lat, lon) = getCoordinates(city)
+                val (lat, lon) = if (currentLat != null && currentLon != null) {
+                    Pair(currentLat!!, currentLon!!)
+                } else {
+                    getCoordinates(city)
+                }
                 // 2. Get weather data
                 val vcWeather = getWeatherVisualCrossing(city, units, forecastType)
                 val omWeather = getWeatherOpenMeteo(lat, lon, units)

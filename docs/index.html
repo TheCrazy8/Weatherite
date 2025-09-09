@@ -21,7 +21,10 @@
         <div class="row g-2">
             <div class="col-md-4">
                 <label class="form-label">City</label>
-                <input type="text" id="cityInput" class="form-control" required>
+                <div class="input-group">
+                    <input type="text" id="cityInput" class="form-control" required>
+                    <button type="button" id="useLocBtn" class="btn btn-outline-secondary">Use Current Location</button>
+                </div>
             </div>
             <div class="col-md-2">
                 <label class="form-label">Units</label>
@@ -83,7 +86,12 @@ const tomorrowWeatherCodes = {
     8000: "Thunderstorm"
 };
 
+let currentLat = null;
+let currentLon = null;
 async function getCoordinates(city) {
+    if (currentLat !== null && currentLon !== null) {
+        return [currentLat, currentLon];
+    }
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`;
     const res = await fetch(url);
     if (!res.ok) return [null, null];
@@ -93,6 +101,21 @@ async function getCoordinates(city) {
     }
     return [null, null];
 }
+
+document.getElementById('useLocBtn').addEventListener('click', function() {
+    if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser.');
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(function(pos) {
+        currentLat = pos.coords.latitude;
+        currentLon = pos.coords.longitude;
+        document.getElementById('cityInput').value = 'Current Location';
+        alert(`Using current location: (${currentLat}, ${currentLon})`);
+    }, function(err) {
+        alert('Could not get location: ' + err.message);
+    });
+});
 
 async function getWeatherVisualCrossing(city, units) {
     const unitGroup = units === "Imperial" ? "us" : "metric";

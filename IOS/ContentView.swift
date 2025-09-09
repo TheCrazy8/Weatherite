@@ -1,8 +1,11 @@
 
 import GoogleMobileAds
 import SwiftUI
+import CoreLocation
 
 struct ContentView: View {
+    @StateObject private var locationManager = LocationManager()
+    @State private var useCurrentLoc: Bool = false
     @State private var city: String = ""
     @State private var units: String = "Metric"
     @State private var weatherData: String = ""
@@ -19,9 +22,18 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 16) {
-                        TextField("Enter city name", text: $city)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .padding(.horizontal)
+                        HStack {
+                            TextField("Enter city name", text: $city)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                            Button("Use Current Location") {
+                                useCurrentLocation()
+                            }
+                        }
+                        .padding(.horizontal)
+    func useCurrentLocation() {
+        locationManager.requestLocation()
+        useCurrentLoc = true
+    }
                         Picker("Units", selection: $units) {
                             Text("Metric").tag("Metric")
                             Text("Imperial").tag("Imperial")
@@ -173,19 +185,32 @@ struct ContentView: View {
                     mapUrl = ""
                     tomorrowIconUrl = ""
                     tomorrowDesc = ""
-                    guard !city.isEmpty else {
-                        errorMsg = "Please enter a city name."
-                        isLoading = false
-                        return
+                    var lat: Double?
+                    var lon: Double?
+                    if useCurrentLoc, let loc = locationManager.location {
+                        lat = loc.latitude
+                        lon = loc.longitude
+                    } else {
+                        guard !city.isEmpty else {
+                            errorMsg = "Please enter a city name."
+                            isLoading = false
+                            return
+                        }
+                        do {
+                            (lat, lon) = try await getCoordinates(city: city)
+                        } catch {
+                            errorMsg = error.localizedDescription
+                            isLoading = false
+                            return
+                        }
                     }
                     do {
-                        let (lat, lon) = try await getCoordinates(city: city)
                         let (vcCurrent, vcForecast, vcAlerts) = try await getWeatherVisualCrossing(city: city, units: units)
-                        let om = try await getWeatherOpenMeteo(lat: lat, lon: lon, units: units)
-                        let tomorrowCode = try await getTomorrowWeatherCode(lat: lat, lon: lon)
+                        let om = try await getWeatherOpenMeteo(lat: lat!, lon: lon!, units: units)
+                        let tomorrowCode = try await getTomorrowWeatherCode(lat: lat!, lon: lon!)
                         let tomorrowDescStr = tomorrowWeatherDesc(code: tomorrowCode)
                         let tomorrowIcon = getTomorrowIconUrl(code: tomorrowCode)
-                        let map = getYandexMapUrl(lat: lat, lon: lon)
+                        let map = getYandexMapUrl(lat: lat!, lon: lon!)
                         weatherData = vcCurrent
                         forecastData = vcForecast
                         alertsData = vcAlerts
@@ -198,6 +223,29 @@ struct ContentView: View {
                     }
                     isLoading = false
                 }
+// LocationManager for CoreLocation
+class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    @Published var location: CLLocationCoordinate2D?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    func requestLocation() {
+        manager.requestWhenInUseAuthorization()
+        manager.requestLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        location = locations.first?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Location error: \(error)")
+    }
+}
 
                 func getCoordinates(city: String) async throws -> (Double, Double) {
                     let urlStr = "https://geocoding-api.open-meteo.com/v1/search?name=\(city.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? city)&count=1"
