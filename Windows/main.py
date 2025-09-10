@@ -8,11 +8,16 @@ from PIL import Image, ImageTk
 import io
 import threading
 import webbrowser
-# For date picker
+# For date picker and charting
 try:
     from tkcalendar import DateEntry
 except ImportError:
     DateEntry = None
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+except ImportError:
+    plt = None
 
 def get_coordinates(city):
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"
@@ -187,36 +192,39 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
     return output_current, output_forecast, output_alerts
 
 # Historical weather function
-def get_historical_weather_visualcrossing(city, api_key, units, date):
+# Fetch historical weather for a date range, return list of daily dicts
+def get_historical_weather_range_visualcrossing(city, api_key, units, start_date, end_date):
     unit_group = 'us' if units == 'Imperial' else 'metric'
-    # Visual Crossing expects date in YYYY-MM-DD
-    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/{date}?unitGroup={unit_group}&key={api_key}&include=days"
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/{start_date}/{end_date}?unitGroup={unit_group}&key={api_key}&include=days"
     response = requests.get(url)
-    output = ""
     if response.status_code == 200:
         data = response.json()
-        days = data.get('days', [])
-        if days:
-            day = days[0]
-            tempmax = day.get('tempmax', 'N/A')
-            tempmin = day.get('tempmin', 'N/A')
-            desc = day.get('description', 'N/A')
-            precip = day.get('precip', 'N/A')
-            humidity = day.get('humidity', 'N/A')
-            wind = day.get('windspeed', 'N/A')
-            temp_unit = '°F' if units == 'Imperial' else '°C'
-            output += f"Historical Weather for {city} on {date}:\n"
-            output += f"Description: {desc}\n"
-            output += f"Max Temp: {tempmax}{temp_unit}\n"
-            output += f"Min Temp: {tempmin}{temp_unit}\n"
-            output += f"Precipitation: {precip}\n"
-            output += f"Humidity: {humidity}%\n"
-            output += f"Wind Speed: {wind}\n"
-        else:
-            output = f"No historical data found for {city} on {date}.\n"
-    else:
-        output = "API error or city/date not found.\n"
-    return output
+        return data.get('days', [])
+    return []
+
+# Format stats and summary for a range
+def format_historical_stats(days, units, city, start_date, end_date):
+    if not days:
+        return f"No historical data found for {city} from {start_date} to {end_date}.\n"
+    tempmaxs = [d.get('tempmax') for d in days if d.get('tempmax') is not None]
+    tempmins = [d.get('tempmin') for d in days if d.get('tempmin') is not None]
+    precips = [d.get('precip') for d in days if d.get('precip') is not None]
+    humidities = [d.get('humidity') for d in days if d.get('humidity') is not None]
+    temp_unit = '°F' if units == 'Imperial' else '°C'
+    summary = f"Historical Weather for {city} from {start_date} to {end_date}:\n"
+    summary += f"Days: {len(days)}\n"
+    if tempmaxs:
+        summary += f"Avg Max Temp: {sum(tempmaxs)/len(tempmaxs):.1f}{temp_unit}\n"
+        summary += f"Max Temp: {max(tempmaxs):.1f}{temp_unit}\n"
+        summary += f"Min Temp: {min(tempmaxs):.1f}{temp_unit}\n"
+    if tempmins:
+        summary += f"Avg Min Temp: {sum(tempmins)/len(tempmins):.1f}{temp_unit}\n"
+    if precips:
+        summary += f"Total Precipitation: {sum(precips):.2f}\n"
+        summary += f"Avg Precipitation: {sum(precips)/len(precips):.2f}\n"
+    if humidities:
+        summary += f"Avg Humidity: {sum(humidities)/len(humidities):.1f}%\n"
+    return summary
 
 def get_google_static_map(lat, lon):
     # Yandex Static Maps API (no API key required)
@@ -606,6 +614,7 @@ if __name__ == "__main__":
     area_frame.columnconfigure(3, weight=1)
     area_frame.rowconfigure(1, weight=1)
 
+
     # --- Historical Data Tab ---
     historical_tab = ttk.Frame(notebook)
     notebook.add(historical_tab, text="Historical Data")
@@ -626,14 +635,49 @@ if __name__ == "__main__":
     hist_imperial_radio = ttk.Radiobutton(hist_units_frame, text="Imperial", variable=hist_units_var, value='Imperial')
     hist_imperial_radio.pack(side=tk.LEFT)
 
-    # Date picker
-    hist_date_label = ttk.Label(hist_top_frame, text="Date:")
-    hist_date_label.pack(side=tk.LEFT, padx=5)
+    # Date range pickers
+    hist_start_label = ttk.Label(hist_top_frame, text="Start Date:")
+    hist_start_label.pack(side=tk.LEFT, padx=5)
     if DateEntry:
-        hist_date_entry = DateEntry(hist_top_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        hist_start_entry = DateEntry(hist_top_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        hist_end_entry = DateEntry(hist_top_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
     else:
-        hist_date_entry = ttk.Entry(hist_top_frame, width=12)
-    hist_date_entry.pack(side=tk.LEFT, padx=5)
+        hist_start_entry = ttk.Entry(hist_top_frame, width=12)
+        hist_end_entry = ttk.Entry(hist_top_frame, width=12)
+    hist_start_entry.pack(side=tk.LEFT, padx=5)
+    hist_end_label = ttk.Label(hist_top_frame, text="End Date:")
+    hist_end_label.pack(side=tk.LEFT, padx=5)
+    hist_end_entry.pack(side=tk.LEFT, padx=5)
+
+    # Preset dropdown
+    hist_preset_var = tk.StringVar(value='Custom')
+    hist_preset_options = ['Custom', 'Last 7 Days', 'Last 30 Days', 'This Month']
+    hist_preset_dropdown = ttk.Combobox(hist_top_frame, textvariable=hist_preset_var, values=hist_preset_options, state="readonly", width=12)
+    hist_preset_dropdown.pack(side=tk.LEFT, padx=5)
+
+    def set_preset_dates():
+        import datetime as dt
+        today = dt.date.today()
+        if hist_preset_var.get() == 'Last 7 Days':
+            start = today - dt.timedelta(days=6)
+            end = today
+        elif hist_preset_var.get() == 'Last 30 Days':
+            start = today - dt.timedelta(days=29)
+            end = today
+        elif hist_preset_var.get() == 'This Month':
+            start = today.replace(day=1)
+            end = today
+        else:
+            return
+        if DateEntry:
+            hist_start_entry.set_date(start)
+            hist_end_entry.set_date(end)
+        else:
+            hist_start_entry.delete(0, tk.END)
+            hist_start_entry.insert(0, str(start))
+            hist_end_entry.delete(0, tk.END)
+            hist_end_entry.insert(0, str(end))
+    hist_preset_dropdown.bind('<<ComboboxSelected>>', lambda e: set_preset_dates())
 
     hist_search_btn = ttk.Button(hist_top_frame, text="Get Historical Weather")
     hist_search_btn.pack(side=tk.LEFT, padx=10)
@@ -641,28 +685,68 @@ if __name__ == "__main__":
     hist_area_frame = ttk.Frame(historical_tab)
     hist_area_frame.pack(fill=tk.BOTH, expand=True)
 
-    hist_text = scrolledtext.ScrolledText(hist_area_frame, width=80, height=30, state='disabled')
+    hist_text = scrolledtext.ScrolledText(hist_area_frame, width=80, height=20, state='disabled')
     hist_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    # Chart button
+    hist_chart_btn = ttk.Button(hist_area_frame, text="Show Chart")
+    hist_chart_btn.pack(side=tk.LEFT, padx=5, pady=5)
 
     def show_historical_weather():
         city = hist_city_entry.get()
         units = hist_units_var.get()
-        date = hist_date_entry.get()
+        start_date = hist_start_entry.get()
+        end_date = hist_end_entry.get()
         api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
-        if not city or not date:
-            messagebox.showerror("Error", "Please enter a city and select a date.")
+        if not city or not start_date or not end_date:
+            messagebox.showerror("Error", "Please enter a city and select start/end dates.")
             return
         hist_text.config(state='normal')
         hist_text.delete(1.0, tk.END)
         hist_text.insert(tk.END, "Loading historical weather...\n")
         def fetch_and_display():
-            result = get_historical_weather_visualcrossing(city, api_key, units, date)
+            days = get_historical_weather_range_visualcrossing(city, api_key, units, start_date, end_date)
+            summary = format_historical_stats(days, units, city, start_date, end_date)
             hist_text.config(state='normal')
             hist_text.delete(1.0, tk.END)
-            hist_text.insert(tk.END, result)
+            hist_text.insert(tk.END, summary)
+            # List daily data
+            for d in days:
+                date = d.get('datetime', '')
+                tempmax = d.get('tempmax', '')
+                tempmin = d.get('tempmin', '')
+                precip = d.get('precip', '')
+                hist_text.insert(tk.END, f"{date}: Max: {tempmax}, Min: {tempmin}, Precip: {precip}\n")
             hist_text.config(state='disabled')
+            # Store for chart
+            hist_area_frame.days = days
         threading.Thread(target=fetch_and_display, daemon=True).start()
     hist_search_btn.config(command=show_historical_weather)
+
+    def show_chart():
+        days = getattr(hist_area_frame, 'days', None)
+        if not days or not plt:
+            messagebox.showerror("Error", "No data or matplotlib not installed.")
+            return
+        dates = [d.get('datetime') for d in days]
+        tempmaxs = [d.get('tempmax') for d in days]
+        tempmins = [d.get('tempmin') for d in days]
+        fig = plt.Figure(figsize=(6,3), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.plot(dates, tempmaxs, label='Max Temp')
+        ax.plot(dates, tempmins, label='Min Temp')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Temperature')
+        ax.set_title('Temperature Trend')
+        ax.legend()
+        # Remove previous chart
+        for child in hist_area_frame.winfo_children():
+            if isinstance(child, FigureCanvasTkAgg):
+                child.get_tk_widget().destroy()
+        canvas = FigureCanvasTkAgg(fig, master=hist_area_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    hist_chart_btn.config(command=show_chart)
 
     sv_ttk.set_theme("dark")
 
