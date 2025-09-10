@@ -849,23 +849,23 @@ if __name__ == "__main__":
         return hashlib.sha256(password.encode()).hexdigest()
 
 
-    def load_users():
-        try:
-            response = requests.get(NPOINT_URL)
-            if response.status_code == 200:
-                data = response.json()
-                return data
-        except Exception:
-            pass
-        return {}
+def load_users():
+    try:
+        response = requests.get(NPOINT_URL)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("user", {})
+    except Exception:
+        pass
+    return {}
 
-
-    def save_users(users):
-        try:
-            response = requests.put(NPOINT_URL, json=users)
-            return response.status_code == 200
-        except Exception:
-            return False
+def save_users(users):
+    try:
+        payload = {"user": users}
+        response = requests.put(NPOINT_URL, json=payload)
+        return response.status_code == 200
+    except Exception:
+        return False
 
     current_user = {"username": None}
 
