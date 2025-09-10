@@ -1,4 +1,7 @@
 import requests
+import os
+import json
+import hashlib
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 from tkinter import ttk
@@ -811,5 +814,143 @@ if __name__ == "__main__":
 
     threading.Thread(target=fetch_weather_news, daemon=True).start()
     threading.Thread(target=fetch_radar_image, daemon=True).start()
+
+    # --- User Accounts & Sync Tab ---
+    accounts_tab = ttk.Frame(notebook)
+    notebook.add(accounts_tab, text="User Accounts & Sync")
+
+    accounts_area_frame = ttk.Frame(accounts_tab)
+    accounts_area_frame.pack(fill=tk.BOTH, expand=True)
+
+    # Login/Register section
+    login_label = ttk.Label(accounts_area_frame, text="Sign In / Register", font=("Segoe UI", 14, "bold"))
+    login_label.pack(anchor="w", padx=5, pady=5)
+
+    username_label = ttk.Label(accounts_area_frame, text="Username:")
+    username_label.pack(anchor="w", padx=5)
+    username_entry = ttk.Entry(accounts_area_frame, width=30)
+    username_entry.pack(anchor="w", padx=5)
+
+    password_label = ttk.Label(accounts_area_frame, text="Password:")
+    password_label.pack(anchor="w", padx=5)
+    password_entry = ttk.Entry(accounts_area_frame, width=30, show="*")
+    password_entry.pack(anchor="w", padx=5)
+
+    status_var = tk.StringVar(value="Not signed in")
+    status_label = ttk.Label(accounts_area_frame, textvariable=status_var, font=("Segoe UI", 10, "italic"))
+    status_label.pack(anchor="w", padx=5, pady=5)
+
+
+
+    # --- Cloud Account Backend Config (npoint.io) ---
+    NPOINT_URL = "https://api.npoint.io/13753492388a938a03d0"  # Replace with your npoint.io endpoint
+
+    def hash_password(password):
+        return hashlib.sha256(password.encode()).hexdigest()
+
+
+    def load_users():
+        try:
+            response = requests.get(NPOINT_URL)
+            if response.status_code == 200:
+                data = response.json()
+                return data
+        except Exception:
+            pass
+        return {}
+
+
+    def save_users(users):
+        try:
+            response = requests.put(NPOINT_URL, json=users)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    current_user = {"username": None}
+
+    def sign_in():
+        username = username_entry.get()
+        password = password_entry.get()
+        if not username or not password:
+            status_var.set("Please enter username and password.")
+            return
+        users = load_users()
+        if username in users:
+            stored_hash = users[username]["password"]
+            if hash_password(password) == stored_hash:
+                current_user["username"] = username
+                last_sync = users[username].get("last_sync", "Never")
+                status_var.set(f"Signed in as {username}. Last sync: {last_sync}.")
+            else:
+                status_var.set("Incorrect password.")
+        else:
+            status_var.set("Username not found. Please register.")
+
+    def sign_out():
+        status_var.set("Not signed in")
+        username_entry.delete(0, tk.END)
+        password_entry.delete(0, tk.END)
+        current_user["username"] = None
+
+    def manual_sync():
+        if current_user["username"]:
+            import datetime
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            users = load_users()
+            users[current_user["username"]]["last_sync"] = now
+            if save_users(users):
+                status_var.set(f"Signed in as {current_user['username']}. Last sync: {now}.")
+            else:
+                status_var.set("Sync failed (cloud error).")
+        else:
+            status_var.set("Sign in to sync.")
+
+    btn_frame = ttk.Frame(accounts_area_frame)
+    btn_frame.pack(anchor="w", padx=5, pady=5)
+    sign_in_btn = ttk.Button(btn_frame, text="Sign In", command=sign_in)
+    sign_in_btn.pack(side=tk.LEFT, padx=2)
+    sign_out_btn = ttk.Button(btn_frame, text="Sign Out", command=sign_out)
+    sign_out_btn.pack(side=tk.LEFT, padx=2)
+    sync_btn = ttk.Button(btn_frame, text="Manual Sync", command=manual_sync)
+    sync_btn.pack(side=tk.LEFT, padx=2)
+
+    # Registration stub (optional)
+    register_label = ttk.Label(accounts_area_frame, text="Don't have an account? Register below:", font=("Segoe UI", 10))
+    register_label.pack(anchor="w", padx=5, pady=10)
+    reg_username_label = ttk.Label(accounts_area_frame, text="New Username:")
+    reg_username_label.pack(anchor="w", padx=5)
+    reg_username_entry = ttk.Entry(accounts_area_frame, width=30)
+    reg_username_entry.pack(anchor="w", padx=5)
+    reg_password_label = ttk.Label(accounts_area_frame, text="New Password:")
+    reg_password_label.pack(anchor="w", padx=5)
+    reg_password_entry = ttk.Entry(accounts_area_frame, width=30, show="*")
+    reg_password_entry.pack(anchor="w", padx=5)
+
+    def register():
+        username = reg_username_entry.get()
+        password = reg_password_entry.get()
+        if not username or not password:
+            status_var.set("Please enter new username and password.")
+            return
+        users = load_users()
+        if username in users:
+            status_var.set("Username already exists. Please choose another.")
+            return
+        # Add new user to users dict
+        users[username] = {
+            "password": hash_password(password),
+            "last_sync": "Never"
+        }
+        # Save updated users dict to npoint.io
+        if save_users(users):
+            status_var.set(f"Account '{username}' registered. Please sign in.")
+        else:
+            status_var.set("Registration failed (cloud error).")
+        reg_username_entry.delete(0, tk.END)
+        reg_password_entry.delete(0, tk.END)
+
+    reg_btn = ttk.Button(accounts_area_frame, text="Register", command=register)
+    reg_btn.pack(anchor="w", padx=5, pady=5)
 
     root.mainloop()
