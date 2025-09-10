@@ -843,7 +843,7 @@ if __name__ == "__main__":
 
 
     # --- Cloud Account Backend Config (npoint.io) ---
-    NPOINT_URL = "https://api.npoint.io/13753492388a938a03d0"  # Replace with your npoint.io endpoint
+    NPOINT_URL = "https://api.npoint.io/b1fb1e759ef27365f787"  # Replace with your npoint.io endpoint
 
     def hash_password(password):
         return hashlib.sha256(password.encode()).hexdigest()
@@ -934,6 +934,9 @@ if __name__ == "__main__":
             status_var.set("Please enter new username and password.")
             return
         users = load_users()
+        # Ensure users is a dict
+        if not isinstance(users, dict):
+            users = {}
         if username in users:
             status_var.set("Username already exists. Please choose another.")
             return
@@ -943,10 +946,13 @@ if __name__ == "__main__":
             "last_sync": "Never"
         }
         # Save updated users dict to npoint.io
-        if save_users(users):
-            status_var.set(f"Account '{username}' registered. Please sign in.")
-        else:
-            status_var.set("Registration failed (cloud error).")
+        try:
+            if save_users(users):
+                status_var.set(f"Account '{username}' registered. Please sign in.")
+            else:
+                status_var.set("Registration failed (cloud error).")
+        except Exception as e:
+            status_var.set(f"Registration failed: {e}")
         reg_username_entry.delete(0, tk.END)
         reg_password_entry.delete(0, tk.END)
 
