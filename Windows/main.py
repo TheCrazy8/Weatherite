@@ -805,12 +805,14 @@ if __name__ == "__main__":
                 img_data = response.content
                 img = Image.open(io.BytesIO(img_data)).resize((512, 512))
                 tk_img = ImageTk.PhotoImage(img)
-                radar_img_label.config(image=tk_img, text='')
-                radar_img_label.image = tk_img
+                def update_image():
+                    radar_img_label.config(image=tk_img, text='')
+                    radar_img_label.image = tk_img
+                root.after(0, update_image)
             else:
-                radar_img_label.config(image='', text='Radar map not available.')
+                root.after(0, lambda: radar_img_label.config(image='', text='Radar map not available.'))
         except Exception as e:
-            radar_img_label.config(image='', text=f'Radar error: {e}')
+            root.after(0, lambda: radar_img_label.config(image='', text=f'Radar error: {e}'))
 
     threading.Thread(target=fetch_weather_news, daemon=True).start()
     threading.Thread(target=fetch_radar_image, daemon=True).start()
