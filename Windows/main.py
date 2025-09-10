@@ -8,6 +8,11 @@ from PIL import Image, ImageTk
 import io
 import threading
 import webbrowser
+# For date picker
+try:
+    from tkcalendar import DateEntry
+except ImportError:
+    DateEntry = None
 
 def get_coordinates(city):
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1"
@@ -180,6 +185,38 @@ def get_weather_visualcrossing(city, api_key, units, forecast_type='3day'):
         output_forecast = ""
         output_alerts = ""
     return output_current, output_forecast, output_alerts
+
+# Historical weather function
+def get_historical_weather_visualcrossing(city, api_key, units, date):
+    unit_group = 'us' if units == 'Imperial' else 'metric'
+    # Visual Crossing expects date in YYYY-MM-DD
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city}/{date}?unitGroup={unit_group}&key={api_key}&include=days"
+    response = requests.get(url)
+    output = ""
+    if response.status_code == 200:
+        data = response.json()
+        days = data.get('days', [])
+        if days:
+            day = days[0]
+            tempmax = day.get('tempmax', 'N/A')
+            tempmin = day.get('tempmin', 'N/A')
+            desc = day.get('description', 'N/A')
+            precip = day.get('precip', 'N/A')
+            humidity = day.get('humidity', 'N/A')
+            wind = day.get('windspeed', 'N/A')
+            temp_unit = '°F' if units == 'Imperial' else '°C'
+            output += f"Historical Weather for {city} on {date}:\n"
+            output += f"Description: {desc}\n"
+            output += f"Max Temp: {tempmax}{temp_unit}\n"
+            output += f"Min Temp: {tempmin}{temp_unit}\n"
+            output += f"Precipitation: {precip}\n"
+            output += f"Humidity: {humidity}%\n"
+            output += f"Wind Speed: {wind}\n"
+        else:
+            output = f"No historical data found for {city} on {date}.\n"
+    else:
+        output = "API error or city/date not found.\n"
+    return output
 
 def get_google_static_map(lat, lon):
     # Yandex Static Maps API (no API key required)
@@ -396,7 +433,15 @@ if __name__ == "__main__":
     main_frame = ttk.Frame(root)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    top_frame = ttk.Frame(main_frame)
+    # Notebook for tabs
+    notebook = ttk.Notebook(main_frame)
+    notebook.pack(fill=tk.BOTH, expand=True)
+
+    # --- Weather Tab ---
+    weather_tab = ttk.Frame(notebook)
+    notebook.add(weather_tab, text="Weather")
+
+    top_frame = ttk.Frame(weather_tab)
     top_frame.pack(fill=tk.X, pady=5)
 
     city_label = ttk.Label(top_frame, text="Enter city name:")
@@ -520,7 +565,7 @@ if __name__ == "__main__":
     search_btn.pack(side=tk.LEFT, padx=10)
 
     # Area frames
-    area_frame = ttk.Frame(main_frame)
+    area_frame = ttk.Frame(weather_tab)
     area_frame.pack(fill=tk.BOTH, expand=True)
 
     current_label = ttk.Label(area_frame, text="Current Weather", font=("Segoe UI", 14, "bold"))
@@ -560,6 +605,64 @@ if __name__ == "__main__":
     area_frame.columnconfigure(2, weight=1)
     area_frame.columnconfigure(3, weight=1)
     area_frame.rowconfigure(1, weight=1)
+
+    # --- Historical Data Tab ---
+    historical_tab = ttk.Frame(notebook)
+    notebook.add(historical_tab, text="Historical Data")
+
+    hist_top_frame = ttk.Frame(historical_tab)
+    hist_top_frame.pack(fill=tk.X, pady=5)
+
+    hist_city_label = ttk.Label(hist_top_frame, text="City:")
+    hist_city_label.pack(side=tk.LEFT)
+    hist_city_entry = ttk.Entry(hist_top_frame, width=30)
+    hist_city_entry.pack(side=tk.LEFT, padx=5)
+
+    hist_units_var = tk.StringVar(value='Metric')
+    hist_units_frame = ttk.Frame(hist_top_frame)
+    hist_units_frame.pack(side=tk.LEFT, padx=10)
+    hist_metric_radio = ttk.Radiobutton(hist_units_frame, text="Metric", variable=hist_units_var, value='Metric')
+    hist_metric_radio.pack(side=tk.LEFT)
+    hist_imperial_radio = ttk.Radiobutton(hist_units_frame, text="Imperial", variable=hist_units_var, value='Imperial')
+    hist_imperial_radio.pack(side=tk.LEFT)
+
+    # Date picker
+    hist_date_label = ttk.Label(hist_top_frame, text="Date:")
+    hist_date_label.pack(side=tk.LEFT, padx=5)
+    if DateEntry:
+        hist_date_entry = DateEntry(hist_top_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+    else:
+        hist_date_entry = ttk.Entry(hist_top_frame, width=12)
+    hist_date_entry.pack(side=tk.LEFT, padx=5)
+
+    hist_search_btn = ttk.Button(hist_top_frame, text="Get Historical Weather")
+    hist_search_btn.pack(side=tk.LEFT, padx=10)
+
+    hist_area_frame = ttk.Frame(historical_tab)
+    hist_area_frame.pack(fill=tk.BOTH, expand=True)
+
+    hist_text = scrolledtext.ScrolledText(hist_area_frame, width=80, height=30, state='disabled')
+    hist_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def show_historical_weather():
+        city = hist_city_entry.get()
+        units = hist_units_var.get()
+        date = hist_date_entry.get()
+        api_key = "GD85JQAPJ8T44X8VKURGLFFD9"  # Visual Crossing API key
+        if not city or not date:
+            messagebox.showerror("Error", "Please enter a city and select a date.")
+            return
+        hist_text.config(state='normal')
+        hist_text.delete(1.0, tk.END)
+        hist_text.insert(tk.END, "Loading historical weather...\n")
+        def fetch_and_display():
+            result = get_historical_weather_visualcrossing(city, api_key, units, date)
+            hist_text.config(state='normal')
+            hist_text.delete(1.0, tk.END)
+            hist_text.insert(tk.END, result)
+            hist_text.config(state='disabled')
+        threading.Thread(target=fetch_and_display, daemon=True).start()
+    hist_search_btn.config(command=show_historical_weather)
 
     sv_ttk.set_theme("dark")
 
