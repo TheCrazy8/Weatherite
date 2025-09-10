@@ -750,4 +750,66 @@ if __name__ == "__main__":
 
     sv_ttk.set_theme("dark")
 
+    # --- Weather News & Radar Tab ---
+    news_tab = ttk.Frame(notebook)
+    notebook.add(news_tab, text="Weather News & Radar")
+
+    news_area_frame = ttk.Frame(news_tab)
+    news_area_frame.pack(fill=tk.BOTH, expand=True)
+
+    # News headlines section
+    news_label = ttk.Label(news_area_frame, text="Latest Weather News", font=("Segoe UI", 14, "bold"))
+    news_label.pack(anchor="w", padx=5, pady=5)
+    news_text = scrolledtext.ScrolledText(news_area_frame, width=60, height=15, state='disabled')
+    news_text.pack(fill=tk.BOTH, expand=False, padx=5, pady=5)
+
+    # Radar section
+    radar_label = ttk.Label(news_area_frame, text="Live Radar Map", font=("Segoe UI", 14, "bold"))
+    radar_label.pack(anchor="w", padx=5, pady=5)
+    radar_img_label = ttk.Label(news_area_frame, text="Radar map will appear here", anchor="center")
+    radar_img_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def fetch_weather_news():
+        try:
+            import feedparser
+        except ImportError:
+            news_text.config(state='normal')
+            news_text.delete(1.0, tk.END)
+            news_text.insert(tk.END, "feedparser not installed. Run 'pip install feedparser'.")
+            news_text.config(state='disabled')
+            return
+        url = "https://weather.com/rss"
+        try:
+            feed = feedparser.parse(url)
+            headlines = []
+            for entry in feed.entries[:10]:
+                headlines.append(f"- {entry.title}\n{entry.link}\n")
+            news_text.config(state='normal')
+            news_text.delete(1.0, tk.END)
+            news_text.insert(tk.END, "\n".join(headlines) if headlines else "No news found.")
+            news_text.config(state='disabled')
+        except Exception as e:
+            news_text.config(state='normal')
+            news_text.delete(1.0, tk.END)
+            news_text.insert(tk.END, f"Error fetching news: {e}")
+            news_text.config(state='disabled')
+
+    def fetch_radar_image():
+        radar_url = "https://tilecache.rainviewer.com/v2/radar/nowcast/0/0/0/2/256.png"
+        try:
+            response = requests.get(radar_url)
+            if response.status_code == 200:
+                img_data = response.content
+                img = Image.open(io.BytesIO(img_data)).resize((512, 512))
+                tk_img = ImageTk.PhotoImage(img)
+                radar_img_label.config(image=tk_img, text='')
+                radar_img_label.image = tk_img
+            else:
+                radar_img_label.config(image='', text='Radar map not available.')
+        except Exception as e:
+            radar_img_label.config(image='', text=f'Radar error: {e}')
+
+    threading.Thread(target=fetch_weather_news, daemon=True).start()
+    threading.Thread(target=fetch_radar_image, daemon=True).start()
+
     root.mainloop()
