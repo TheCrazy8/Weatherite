@@ -841,121 +841,87 @@ if __name__ == "__main__":
     status_label.pack(anchor="w", padx=5, pady=5)
 
 
-    # --- Cloud Account Backend Config (npoint.io) ---
-    NPOINT_URL = "https://api.npoint.io/b1fb1e759ef27365f787"  # Replace with your npoint.io endpoint
+    # --- GitHub OAuth App Authentication for User Identity ---
+    import webbrowser
+    import socket
+    import urllib.parse
+    import threading
+    import tkinter.simpledialog
 
-    def hash_password(password):
-        return hashlib.sha256(password.encode()).hexdigest()
+    GITHUB_CLIENT_ID = "Ov23lia3P7WUUFlt8GbM"
+    GITHUB_ACCESS_TOKEN = None
+    GITHUB_USER_INFO = None
 
-    # User account state
-    current_user = {"username": None}
+    GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+    GITHUB_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token"
+    GITHUB_OAUTH_SCOPE = "read:user user:email"
+    LOCAL_SERVER_PORT = 8765
 
-    def load_users():
-        try:
-            response = requests.get(NPOINT_URL)
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("user", {})
-        except Exception:
-            pass
-        return {}
+    redirect_uri = f"http://localhost:{LOCAL_SERVER_PORT}/callback"
+    auth_url = f"{GITHUB_OAUTH_AUTHORIZE_URL}?client_id={GITHUB_CLIENT_ID}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope={GITHUB_OAUTH_SCOPE}"
+    webbrowser.open(auth_url)
 
-    def save_users(users):
-        try:
-            payload = {"user": users}
-            response = requests.put(NPOINT_URL, json=payload)
-            return response.status_code == 200
-        except Exception:
-            return False
+    def run_local_server_for_code():
+        code = None
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(('localhost', LOCAL_SERVER_PORT))
+        server.listen(1)
+        conn, addr = server.accept()
+        request = conn.recv(1024).decode()
+        first_line = request.split('\r\n')[0]
+        if 'GET /callback?' in first_line:
+            query = first_line.split(' ')[1]
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(query).query)
+            code = params.get('code', [None])[0]
+        response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nLogin complete. You may close this window."
+        conn.sendall(response.encode())
+        conn.close()
+        server.close()
+        return code
 
-    def sign_in():
-        username = username_entry.get()
-        password = password_entry.get()
-        if not username or not password:
-            status_var.set("Please enter username and password.")
-            return
-        users = load_users()
-        if username in users:
-            stored_hash = users[username]["password"]
-            if hash_password(password) == stored_hash:
-                current_user["username"] = username
-                last_sync = users[username].get("last_sync", "Never")
-                status_var.set(f"Signed in as {username}. Last sync: {last_sync}.")
-            else:
-                status_var.set("Incorrect password.")
-        else:
-            status_var.set("Username not found. Please register.")
-
-    def sign_out():
-        status_var.set("Not signed in")
-        username_entry.delete(0, tk.END)
-        password_entry.delete(0, tk.END)
-        current_user["username"] = None
-
-    def manual_sync():
-        if current_user["username"]:
-            import datetime
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            users = load_users()
-            users[current_user["username"]]["last_sync"] = now
-            if save_users(users):
-                status_var.set(f"Signed in as {current_user['username']}. Last sync: {now}.")
-            else:
-                status_var.set("Sync failed (cloud error).")
-        else:
-            status_var.set("Sign in to sync.")
-
-    btn_frame = ttk.Frame(accounts_area_frame)
-    btn_frame.pack(anchor="w", padx=5, pady=5)
-    sign_in_btn = ttk.Button(btn_frame, text="Sign In", command=sign_in)
-    sign_in_btn.pack(side=tk.LEFT, padx=2)
-    sign_out_btn = ttk.Button(btn_frame, text="Sign Out", command=sign_out)
-    sign_out_btn.pack(side=tk.LEFT, padx=2)
-    sync_btn = ttk.Button(btn_frame, text="Manual Sync", command=manual_sync)
-    sync_btn.pack(side=tk.LEFT, padx=2)
-
-    # Registration stub (optional)
-    register_label = ttk.Label(accounts_area_frame, text="Don't have an account? Register below:", font=("Segoe UI", 10))
-    register_label.pack(anchor="w", padx=5, pady=10)
-    reg_username_label = ttk.Label(accounts_area_frame, text="New Username:")
-    reg_username_label.pack(anchor="w", padx=5)
-    reg_username_entry = ttk.Entry(accounts_area_frame, width=30)
-    reg_username_entry.pack(anchor="w", padx=5)
-    reg_password_label = ttk.Label(accounts_area_frame, text="New Password:")
-    reg_password_label.pack(anchor="w", padx=5)
-    reg_password_entry = ttk.Entry(accounts_area_frame, width=30, show="*")
-    reg_password_entry.pack(anchor="w", padx=5)
-
-    def register():
-        username = reg_username_entry.get()
-        password = reg_password_entry.get()
-        if not username or not password:
-            status_var.set("Please enter new username and password.")
-            return
-        users = load_users()
-        # Ensure users is a dict
-        if not isinstance(users, dict):
-            users = {}
-        if username in users:
-            status_var.set("Username already exists. Please choose another.")
-            return
-        # Add new user to users dict
-        users[username] = {
-            "password": hash_password(password),
-            "last_sync": "Never"
+    def get_github_access_token(code):
+        data = {
+            "client_id": GITHUB_CLIENT_ID,
+            "client_secret": "191de177f8412bbe771be12c6dafedddfa320120",  # <-- Replace with your secret
+            "code": code,
+            "redirect_uri": redirect_uri
         }
-        # Save updated users dict to npoint.io
-        try:
-            if save_users(users):
-                status_var.set(f"Account '{username}' registered. Please sign in.")
-            else:
-                status_var.set("Registration failed (cloud error).")
-        except Exception as e:
-            status_var.set(f"Registration failed: {e}")
-        reg_username_entry.delete(0, tk.END)
-        reg_password_entry.delete(0, tk.END)
+        headers = {"Accept": "application/json"}
+        resp = requests.post(GITHUB_OAUTH_TOKEN_URL, data=data, headers=headers)
+        if resp.status_code == 200:
+            return resp.json().get("access_token")
+        return None
 
-    reg_btn = ttk.Button(accounts_area_frame, text="Register", command=register)
-    reg_btn.pack(anchor="w", padx=5, pady=5)
+    def get_github_user_info(token):
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        resp = requests.get("https://api.github.com/user", headers=headers)
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+
+    def oauth_flow():
+        global GITHUB_ACCESS_TOKEN, GITHUB_USER_INFO
+        code = run_local_server_for_code()
+        if code:
+            GITHUB_ACCESS_TOKEN = get_github_access_token(code)
+            if GITHUB_ACCESS_TOKEN:
+                GITHUB_USER_INFO = get_github_user_info(GITHUB_ACCESS_TOKEN)
+            else:
+                GITHUB_USER_INFO = None
+        else:
+            GITHUB_ACCESS_TOKEN = None
+            GITHUB_USER_INFO = None
+
+    t = threading.Thread(target=oauth_flow)
+    t.start()
+    t.join()
+
+    # Example: show signed-in user info in status label
+    if GITHUB_USER_INFO:
+        username = GITHUB_USER_INFO.get("login", "Unknown")
+        user_id = GITHUB_USER_INFO.get("id", "Unknown")
+        status_var.set(f"Signed in with GitHub: {username} (ID: {user_id})")
+    else:
+        status_var.set("GitHub sign-in failed.")
 
     root.mainloop()
