@@ -841,33 +841,32 @@ if __name__ == "__main__":
     status_label.pack(anchor="w", padx=5, pady=5)
 
 
-
     # --- Cloud Account Backend Config (npoint.io) ---
     NPOINT_URL = "https://api.npoint.io/b1fb1e759ef27365f787"  # Replace with your npoint.io endpoint
 
     def hash_password(password):
         return hashlib.sha256(password.encode()).hexdigest()
 
-
-def load_users():
-    try:
-        response = requests.get(NPOINT_URL)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("user", {})
-    except Exception:
-        pass
-    return {}
-
-def save_users(users):
-    try:
-        payload = {"user": users}
-        response = requests.put(NPOINT_URL, json=payload)
-        return response.status_code == 200
-    except Exception:
-        return False
-
+    # User account state
     current_user = {"username": None}
+
+    def load_users():
+        try:
+            response = requests.get(NPOINT_URL)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("user", {})
+        except Exception:
+            pass
+        return {}
+
+    def save_users(users):
+        try:
+            payload = {"user": users}
+            response = requests.put(NPOINT_URL, json=payload)
+            return response.status_code == 200
+        except Exception:
+            return False
 
     def sign_in():
         username = username_entry.get()
