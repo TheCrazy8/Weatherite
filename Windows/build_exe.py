@@ -13,7 +13,7 @@ main_script = "main.py"
 print("Running PyInstaller...")
 PyInstaller.__main__.run([
     main_script,
-    '--onefile',
     '--name', 'Weatherite'
 ])
 print("Build complete. Check the 'dist' folder for Weatherite.exe.")
+
