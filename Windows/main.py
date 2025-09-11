@@ -817,6 +817,296 @@ if __name__ == "__main__":
     threading.Thread(target=fetch_weather_news, daemon=True).start()
     threading.Thread(target=fetch_radar_image, daemon=True).start()
 
+    # --- Tornado History Tab (Added) ---
+    tornado_tab = ttk.Frame(notebook)
+    notebook.add(tornado_tab, text="Tornado History")
+
+    tornado_top = ttk.Frame(tornado_tab)
+    tornado_top.pack(fill=tk.X, pady=5)
+
+    ttk.Label(tornado_top, text="City:").pack(side=tk.LEFT)
+    tornado_city_entry = ttk.Entry(tornado_top, width=25)
+    tornado_city_entry.pack(side=tk.LEFT, padx=4)
+
+    # Date selectors
+    ttk.Label(tornado_top, text="Start Date:").pack(side=tk.LEFT, padx=4)
+    if DateEntry:
+        tornado_start_entry = DateEntry(tornado_top, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+        tornado_end_entry = DateEntry(tornado_top, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='y-mm-dd')
+    else:
+        tornado_start_entry = ttk.Entry(tornado_top, width=12)
+        tornado_end_entry = ttk.Entry(tornado_top, width=12)
+    tornado_start_entry.pack(side=tk.LEFT, padx=2)
+    ttk.Label(tornado_top, text="End Date:").pack(side=tk.LEFT, padx=4)
+    tornado_end_entry.pack(side=tk.LEFT, padx=2)
+
+    # Bounding box size selector
+    ttk.Label(tornado_top, text="Radius°:").pack(side=tk.LEFT, padx=4)
+    tornado_radius_var = tk.DoubleVar(value=1.5)
+    tornado_radius_spin = ttk.Spinbox(tornado_top, from_=0.5, to=5.0, increment=0.5, width=5, textvariable=tornado_radius_var)
+    tornado_radius_spin.pack(side=tk.LEFT)
+
+    tornado_fetch_btn = ttk.Button(tornado_top, text="Load Tornado Data")
+    tornado_fetch_btn.pack(side=tk.LEFT, padx=8)
+
+    # Show paths checkbox
+    tornado_show_paths_var = tk.BooleanVar(value=True)
+    tornado_paths_chk = ttk.Checkbutton(tornado_top, text="Show Paths", variable=tornado_show_paths_var)
+    tornado_paths_chk.pack(side=tk.LEFT, padx=4)
+
+    # Area frame
+    tornado_area = ttk.Frame(tornado_tab)
+    tornado_area.pack(fill=tk.BOTH, expand=True)
+
+    tornado_output = scrolledtext.ScrolledText(tornado_area, height=12, state='disabled')
+    tornado_output.pack(fill=tk.X, padx=5, pady=5)
+
+    tornado_map_container = ttk.Frame(tornado_area)
+    tornado_map_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    tornado_map_label = ttk.Label(tornado_map_container, text="Tornado map will appear here", anchor='center')
+    tornado_map_label.pack(fill=tk.BOTH, expand=True)
+
+    # Color mapping for EF scale
+    EF_COLORS = {
+        '0': '#bbbbbb',
+        '1': '#ffff66',
+        '2': '#ffcc33',
+        '3': '#ff6633',
+        '4': '#cc00cc',
+        '5': '#000000',
+        'UNK': '#888888'
+    }
+
+    def log_tornado(text, replace=False):
+        tornado_output.config(state='normal')
+        if replace:
+            tornado_output.delete(1.0, tk.END)
+        tornado_output.insert(tk.END, text)
+        tornado_output.see(tk.END)
+        tornado_output.config(state='disabled')
+
+    def fetch_tornado_reports(city, start_date, end_date, radius_deg):
+        """Fetch tornado Local Storm Reports from IEM (Iowa State) GeoJSON API and filter by bounding box around city."""
+        lat, lon = get_coordinates(city)
+        if lat is None or lon is None:
+            return None, f"Unable to geocode city '{city}'."
+        params = {
+            'sts': f"{start_date} 00:00:00",
+            'ets': f"{end_date} 23:59:59",
+            'phenomena': 'TO',
+            'format': 'geojson'
+        }
+        url = "https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py"
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            if resp.status_code != 200:
+                return None, f"API error {resp.status_code} calling IEM LSR service."
+            data = resp.json()
+            features = data.get('features', [])
+            min_lat = lat - radius_deg
+            max_lat = lat + radius_deg
+            min_lon = lon - radius_deg
+            max_lon = lon + radius_deg
+            filtered = []
+            for f in features:
+                props = f.get('properties', {})
+                geom = f.get('geometry', {})
+                if geom.get('type') == 'Point':
+                    coords = geom.get('coordinates', [])  # [lon, lat]
+                    if len(coords) == 2:
+                        lon_f, lat_f = coords
+                        if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
+                            filtered.append({
+                                'lat': lat_f,
+                                'lon': lon_f,
+                                'valid': props.get('valid'),
+                                'magnitude': props.get('magnitude'),  # EF rating maybe
+                                'city_lat': lat,
+                                'city_lon': lon,
+                                'wfo': props.get('wfo'),
+                                'remark': props.get('remark')
+                            })
+            return filtered, None
+        except Exception as e:
+            return None, f"Error fetching tornado data: {e}"
+
+    def fetch_tornado_tracks(city, start_date, end_date, radius_deg):
+        """Fetch tornado tracks (begin/end points) from NOAA SWDI and filter to bounding box."""
+        lat, lon = get_coordinates(city)
+        if lat is None or lon is None:
+            return None, f"Unable to geocode city '{city}' for tracks."
+        minLat = lat - radius_deg
+        maxLat = lat + radius_deg
+        minLon = lon - radius_deg
+        maxLon = lon + radius_deg
+        # SWDI expects YYYY-MM-DD format for endpoints (inclusive)
+        base_url = f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{start_date}/{end_date}?bbox={minLon},{minLat},{maxLon},{maxLat}"
+        try:
+            resp = requests.get(base_url, timeout=20)
+            if resp.status_code != 200:
+                return None, f"SWDI tracks API error {resp.status_code}."
+            lines = resp.text.splitlines()
+            if not lines:
+                return [], None
+            header = lines[0].split(',')
+            # Map needed indices defensively
+            def idx(col):
+                try:
+                    return header.index(col)
+                except ValueError:
+                    return -1
+            idx_BEGIN_LAT = idx('BEGIN_LAT')
+            idx_BEGIN_LON = idx('BEGIN_LON')
+            idx_END_LAT = idx('END_LAT')
+            idx_END_LON = idx('END_LON')
+            idx_F = idx('TOR_F_SCALE')
+            idx_DATE = idx('BEGIN_DATE')
+            tracks = []
+            for line in lines[1:]:
+                parts = line.split(',')
+                try:
+                    if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
+                        continue
+                    slat = float(parts[idx_BEGIN_LAT])
+                    slon = float(parts[idx_BEGIN_LON])
+                    elat = float(parts[idx_END_LAT])
+                    elon = float(parts[idx_END_LON])
+                    ef = parts[idx_F] if idx_F >= 0 and idx_F < len(parts) else 'UNK'
+                    date = parts[idx_DATE] if idx_DATE >= 0 and idx_DATE < len(parts) else ''
+                    tracks.append({
+                        'start_lat': slat,
+                        'start_lon': slon,
+                        'end_lat': elat,
+                        'end_lon': elon,
+                        'ef': ef if ef else 'UNK',
+                        'date': date,
+                        'city_lat': lat,
+                        'city_lon': lon
+                    })
+                except Exception:
+                    continue
+            return tracks, None
+        except Exception as e:
+            return None, f"Error fetching tracks: {e}"
+
+    def plot_tornado_reports(city, reports, tracks=None):
+        if not plt:
+            log_tornado("matplotlib not installed. Install it for map visualization.\n", replace=False)
+            return
+        # Clear previous figure widgets
+        for child in tornado_map_container.winfo_children():
+            if isinstance(child, FigureCanvasTkAgg):
+                child.get_tk_widget().destroy()
+        if (not reports) and (not tracks):
+            tornado_map_label.config(text="No tornado data in range.")
+            return
+        tornado_map_label.config(text="")
+        lats = [r['lat'] for r in reports] if reports else []
+        lons = [r['lon'] for r in reports] if reports else []
+        if tracks:
+            lats.extend([t['start_lat'] for t in tracks] + [t['end_lat'] for t in tracks])
+            lons.extend([t['start_lon'] for t in tracks] + [t['end_lon'] for t in tracks])
+        # Determine city center using first available dataset
+        if reports:
+            city_lat = reports[0]['city_lat']
+            city_lon = reports[0]['city_lon']
+        else:
+            city_lat = tracks[0]['city_lat']
+            city_lon = tracks[0]['city_lon']
+        pad = 0.5
+        min_lat = min(lats + [city_lat]) - pad
+        max_lat = max(lats + [city_lat]) + pad
+        min_lon = min(lons + [city_lon]) - pad
+        max_lon = max(lons + [city_lon]) + pad
+        fig = plt.Figure(figsize=(6,6), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.set_title(f"Tornado Reports near {city}")
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+        ax.set_xlim(min_lon, max_lon)
+        ax.set_ylim(min_lat, max_lat)
+        # Plot city
+        ax.plot(city_lon, city_lat, 'bo', label=city)
+        # Plot reports (points)
+        if reports:
+            for r in reports:
+                ef = str(r['magnitude']) if r['magnitude'] not in (None, '') else 'UNK'
+                color = EF_COLORS.get(ef, '#888888')
+                ax.plot(r['lon'], r['lat'], marker='o', color=color, markersize=6, alpha=0.75)
+        # Plot tracks (lines)
+        if tracks:
+            for t in tracks:
+                ef = str(t['ef']) if t['ef'] else 'UNK'
+                color = EF_COLORS.get(ef, '#888888')
+                ax.plot([t['start_lon'], t['end_lon']], [t['start_lat'], t['end_lat']], color=color, linewidth=2, alpha=0.9)
+                ax.text(t['end_lon'], t['end_lat'], f"EF{ef}", fontsize=7, color=color)
+        # Legend for EF colors
+        handles = []
+        import matplotlib.patches as mpatches
+        for k, v in EF_COLORS.items():
+            label = f"EF{k}" if k != 'UNK' else 'Unknown/Point'
+            handles.append(mpatches.Patch(color=v, label=label))
+        ax.legend(handles=handles, fontsize=8, loc='upper right')
+        canvas = FigureCanvasTkAgg(fig, master=tornado_map_container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def load_tornado_history():
+        city = tornado_city_entry.get().strip()
+        start_date = tornado_start_entry.get().strip()
+        end_date = tornado_end_entry.get().strip()
+        radius = tornado_radius_var.get()
+        if not city or not start_date or not end_date:
+            messagebox.showerror("Error", "City and date range required.")
+            return
+        log_tornado("Fetching tornado reports...\n", replace=True)
+        def worker():
+            reports, err = fetch_tornado_reports(city, start_date, end_date, radius)
+            if err:
+                log_tornado(err + "\n", replace=True)
+                return
+            tracks = []
+            if tornado_show_paths_var.get():
+                log_tornado("Fetching tornado tracks...\n")
+                tracks, terr = fetch_tornado_tracks(city, start_date, end_date, radius)
+                if terr:
+                    log_tornado(terr + "\n")
+            if not reports and not tracks:
+                log_tornado(f"No tornado data found near {city} for given range.\n", replace=True)
+                return
+            # Sort by time for reports
+            if reports:
+                reports.sort(key=lambda r: r.get('valid') or '')
+                log_tornado(f"Reports ({len(reports)}):\n", replace=True)
+                for r in reports[:250]:
+                    ef = r['magnitude'] if r['magnitude'] not in (None, '') else 'UNK'
+                    log_tornado(f"{r['valid']}: EF{ef} at ({r['lat']:.2f},{r['lon']:.2f}) WFO={r['wfo']}\n")
+                if len(reports) > 250:
+                    log_tornado(f"... truncated {len(reports)-250} more reports ...\n")
+            if tracks:
+                log_tornado(f"Tracks ({len(tracks)}):\n")
+                for t in tracks[:150]:
+                    log_tornado(f"{t['date']}: EF{t['ef']} from ({t['start_lat']:.2f},{t['start_lon']:.2f}) to ({t['end_lat']:.2f},{t['end_lon']:.2f})\n")
+                if len(tracks) > 150:
+                    log_tornado(f"... truncated {len(tracks)-150} more tracks ...\n")
+            plot_tornado_reports(city, reports, tracks if tracks else None)
+        threading.Thread(target=worker, daemon=True).start()
+    tornado_fetch_btn.config(command=load_tornado_history)
+
+    # Helpful preset: set today and yesterday
+    try:
+        from datetime import date, timedelta
+        today = date.today()
+        yday = today - timedelta(days=1)
+        if DateEntry:
+            tornado_start_entry.set_date(yday)
+            tornado_end_entry.set_date(today)
+        else:
+            tornado_start_entry.insert(0, str(yday))
+            tornado_end_entry.insert(0, str(today))
+    except Exception:
+        pass
+
     # --- User Accounts & Sync Tab ---
     accounts_tab = ttk.Frame(notebook)
     notebook.add(accounts_tab, text="User Accounts & Sync")
