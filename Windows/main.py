@@ -862,6 +862,23 @@ if __name__ == "__main__":
     tornado_paths_chk = ttk.Checkbutton(tornado_top, text="Show Paths", variable=tornado_show_paths_var)
     tornado_paths_chk.pack(side=tk.LEFT, padx=4)
 
+    # EF filter (minimum EF rating)
+    ttk.Label(tornado_top, text="Min EF:").pack(side=tk.LEFT, padx=4)
+    tornado_min_ef_var = tk.StringVar(value="Any")
+    tornado_min_ef_combo = ttk.Combobox(
+        tornado_top,
+        textvariable=tornado_min_ef_var,
+        values=["Any", "0", "1", "2", "3", "4", "5"],
+        width=5,
+        state="readonly"
+    )
+    tornado_min_ef_combo.pack(side=tk.LEFT)
+
+    # Include Unknown EF checkbox
+    tornado_include_unknown_var = tk.BooleanVar(value=True)
+    tornado_include_unknown_chk = ttk.Checkbutton(tornado_top, text="Include Unknown", variable=tornado_include_unknown_var)
+    tornado_include_unknown_chk.pack(side=tk.LEFT, padx=4)
+
     # (Removed ArcGIS / IEM options – NOAA SWDI is now sole data source)
 
     # Area frame
@@ -913,233 +930,83 @@ if __name__ == "__main__":
 
     # (Removed fetch_tornado_reports – IEM LSR no longer used)
 
-    def fetch_tornado_tracks(city, start_date, end_date, radius_km):
-        """Fetch tornado tracks from NOAA SWDI and filter by true km radius.
-        Enhancements:
-          * Robust date parsing (accepts YYYY-MM-DD, trims to YYYYMMDD for API)
-          * Enlarged bbox to capture tracks whose segment passes through radius but endpoints outside circle
-          * Segment distance test (track counted if line from start->end crosses radius)
-          * Fallback alternate URL pattern if primary fails
-        """
+    def fetch_tornado_events(city, start_date, end_date, radius_km):
         from datetime import datetime as _dt
-        # Geocode
         lat, lon = get_coordinates(city)
         if lat is None or lon is None:
-            return None, f"Unable to geocode city '{city}' for tracks."
-        # Parse and normalize dates
-        def norm(d):
-            d = d.strip()
-            try:
-                obj = _dt.strptime(d, '%Y-%m-%d')
-            except ValueError:
-                try:
-                    obj = _dt.strptime(d, '%Y%m%d')
-                except ValueError:
-                    return None
-            return obj
-        ds = norm(start_date); de = norm(end_date)
-        if not ds or not de:
-            return None, 'Invalid date(s). Use YYYY-MM-DD.'
+            return None, f"Unable to geocode city '{city}'."
+        try:
+            ds = _dt.strptime(start_date.strip(), '%Y-%m-%d')
+            de = _dt.strptime(end_date.strip(), '%Y-%m-%d')
+        except ValueError:
+            return None, 'Invalid date format. Use YYYY-MM-DD.'
         if ds > de:
             return None, 'Start date must be before end date.'
-        # Convert to YYYYMMDD for NOAA path
-        s_comp = ds.strftime('%Y%m%d'); e_comp = de.strftime('%Y%m%d')
-        # Bounding box (enlarge slightly so long tracks crossing the circle are included)
-        enlarge = 1.25
-        lat_buffer_deg = (radius_km / 111.0) * enlarge
+        expand = 1.15
+        lat_buf = (radius_km / 111.0) * expand
         cos_lat = max(math.cos(math.radians(lat)), 0.0001)
-        lon_buffer_deg = (radius_km / (111.320 * cos_lat)) * enlarge
-        minLat = lat - lat_buffer_deg
-        maxLat = lat + lat_buffer_deg
-        minLon = lon - lon_buffer_deg
-        maxLon = lon + lon_buffer_deg
-
-        def build_urls():
-            # Known working pattern (range path separated by /)
-            yield f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{s_comp}/{e_comp}?bbox={minLon},{minLat},{maxLon},{maxLat}"
-            # Alternate pattern some older docs reference (colon)
-            yield f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{s_comp}:{e_comp}?bbox={minLon},{minLat},{maxLon},{maxLat}"
-
-        def segment_distance_km(px, py, x1, y1, x2, y2):
-            """Approximate shortest distance from point (px,py) to segment (x1,y1)-(x2,y2) in km using local projection."""
-            # Convert to simple Cartesian (km) around center latitude
-            km_per_deg_lat = 111.0
-            km_per_deg_lon = 111.320 * math.cos(math.radians(py))
-            Xp, Yp = (px * km_per_deg_lon, py * km_per_deg_lat)
-            X1, Y1 = (x1 * km_per_deg_lon, y1 * km_per_deg_lat)
-            X2, Y2 = (x2 * km_per_deg_lon, y2 * km_per_deg_lat)
-            dx = X2 - X1; dy = Y2 - Y1
-            if dx == 0 and dy == 0:
-                return math.hypot(Xp - X1, Yp - Y1)
-            t = ((Xp - X1) * dx + (Yp - Y1) * dy) / (dx*dx + dy*dy)
-            t = max(0, min(1, t))
-            Xc = X1 + t * dx; Yc = Y1 + t * dy
-            return math.hypot(Xp - Xc, Yp - Yc)
-
-        last_err = None
-        # Primary range attempt
-        for url in build_urls():
-            try:
-                resp = requests.get(url, timeout=30)
-            except Exception as e:
-                last_err = f"Request error: {e}"; continue
-            if resp.status_code == 500:
-                last_err = 'SWDI HTTP 500'
-                continue  # will consider segmented fallback
-            if resp.status_code != 200:
-                last_err = f"SWDI HTTP {resp.status_code}"; continue
-            text = resp.text
-            if 'ERROR' in text[:200].upper():
-                last_err = 'SWDI returned error message.'; continue
-            lines = text.splitlines()
-            if not lines:
-                last_err = 'Empty response.'; continue
-            header = lines[0].split(',')
-            def idx(col):
-                try:
-                    return header.index(col)
-                except ValueError:
-                    return -1
-            idx_BEGIN_LAT = idx('BEGIN_LAT'); idx_BEGIN_LON = idx('BEGIN_LON')
-            idx_END_LAT = idx('END_LAT'); idx_END_LON = idx('END_LON')
-            idx_F = idx('TOR_F_SCALE'); idx_DATE = idx('BEGIN_DATE')
-            if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
-                last_err = 'Missing expected columns.'; continue
-            tracks = []
-            for line in lines[1:]:
-                parts = line.split(',')
-                try:
-                    slat = float(parts[idx_BEGIN_LAT]); slon = float(parts[idx_BEGIN_LON])
-                    elat = float(parts[idx_END_LAT]); elon = float(parts[idx_END_LON])
-                except Exception:
-                    continue
-                ef = 'UNK'
-                if 0 <= idx_F < len(parts):
-                    val = parts[idx_F].strip(); ef = val if val else 'UNK'
-                date_val = parts[idx_DATE].strip() if 0 <= idx_DATE < len(parts) else ''
-                start_in = haversine_km(lat, lon, slat, slon) <= radius_km
-                end_in = haversine_km(lat, lon, elat, elon) <= radius_km
-                seg_in = False
-                if not (start_in or end_in):
-                    if segment_distance_km(lon, lat, slon, slat, elon, elat) <= radius_km:
-                        seg_in = True
-                if start_in or end_in or seg_in:
-                    tracks.append({
-                        'start_lat': slat,
-                        'start_lon': slon,
-                        'end_lat': elat,
-                        'end_lon': elon,
-                        'ef': ef,
-                        'date': date_val,
-                        'city_lat': lat,
-                        'city_lon': lon
-                    })
-                if len(tracks) >= 8000:
-                    break
-            return tracks, None
-        # Fallback: segmented daily requests if 500 and range reasonable
-        total_days = (de - ds).days + 1
-        if last_err == 'SWDI HTTP 500' and total_days > 1:
-            if total_days > 62:  # arbitrary safeguard
-                return None, 'SWDI HTTP 500 on bulk request; please narrow date range (< 62 days) and try again.'
-            try:
-                log_tornado(f"Server 500 on bulk range; attempting {total_days} daily SWDI requests...\n")
-            except Exception:
-                pass
-            aggregated = []
-            day = ds
-            attempts = 0
-            from time import sleep
-            while day <= de:
-                sday = day.strftime('%Y%m%d')
-                for url in (f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{sday}/{sday}?bbox={minLon},{minLat},{maxLon},{maxLat}",
-                            f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{sday}:{sday}?bbox={minLon},{minLat},{maxLon},{maxLat}"):
-                    attempts += 1
+        lon_buf = (radius_km / (111.320 * cos_lat)) * expand
+        min_lat = lat - lat_buf; max_lat = lat + lat_buf
+        min_lon = lon - lon_buf; max_lon = lon + lon_buf
+        base = "https://www.ncei.noaa.gov/access/services/search/v1/data"
+        params = {
+            'dataset': 'stormevents', 'dataType': 'details',
+            'startDate': ds.strftime('%Y-%m-%d'), 'endDate': de.strftime('%Y-%m-%d'),
+            'filter': 'eventType:eq:Tornado',
+            'boundingBox': f"{min_lat},{min_lon},{max_lat},{max_lon}",
+            'limit': 10000, 'offset': 0, 'format': 'json'
+        }
+        tracks = []; seen=set()
+        def within(slat, slon, elat, elon):
+            if haversine_km(lat, lon, slat, slon) <= radius_km: return True
+            if haversine_km(lat, lon, elat, elon) <= radius_km: return True
+            mid_lat=(slat+elat)/2.0; mid_lon=(slon+elon)/2.0
+            return haversine_km(lat, lon, mid_lat, mid_lon) <= radius_km
+        try:
+            while True:
+                r = requests.get(base, params=params, timeout=40)
+                if r.status_code != 200:
+                    return None, f"StormEvents HTTP {r.status_code}"
+                js = r.json(); res = js.get('results') or []
+                if not res: break
+                for ev in res:
                     try:
-                        resp = requests.get(url, timeout=25)
+                        evid = ev.get('eventId') or ev.get('episodeId') or id(ev)
+                        if evid in seen: continue
+                        slat = float(ev.get('beginLat', ev.get('beginLatitude', 'nan')))
+                        slon = float(ev.get('beginLon', ev.get('beginLongitude', 'nan')))
+                        elat = float(ev.get('endLat', ev.get('endLatitude', slat)))
+                        elon = float(ev.get('endLon', ev.get('endLongitude', slon)))
+                        if any(math.isnan(x) for x in [slat, slon]): continue
+                        if not within(slat, slon, elat, elon): continue
+                        mag = ev.get('magnitude'); ef='UNK'
+                        if mag not in (None, ''):
+                            try:
+                                mv=int(float(mag));
+                                if 0<=mv<=5: ef=str(mv)
+                            except Exception: pass
+                        date_str=(ev.get('beginDateTime') or '')[:10]
+                        tracks.append({'start_lat': slat,'start_lon': slon,'end_lat': elat,'end_lon': elon,'ef': ef,'date': date_str,'city_lat': lat,'city_lon': lon})
+                        seen.add(evid)
+                        if len(tracks) >= 8000: break
                     except Exception:
                         continue
-                    if resp.status_code != 200:
-                        continue
-                    lines = resp.text.splitlines()
-                    if not lines:
-                        continue
-                    header = lines[0].split(',')
-                    def idx2(col):
-                        try:
-                            return header.index(col)
-                        except ValueError:
-                            return -1
-                    idx_BEGIN_LAT = idx2('BEGIN_LAT'); idx_BEGIN_LON = idx2('BEGIN_LON')
-                    idx_END_LAT = idx2('END_LAT'); idx_END_LON = idx2('END_LON')
-                    idx_F = idx2('TOR_F_SCALE'); idx_DATE = idx2('BEGIN_DATE')
-                    if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
-                        continue
-                    for line2 in lines[1:]:
-                        parts = line2.split(',')
-                        try:
-                            slat = float(parts[idx_BEGIN_LAT]); slon = float(parts[idx_BEGIN_LON])
-                            elat = float(parts[idx_END_LAT]); elon = float(parts[idx_END_LON])
-                        except Exception:
-                            continue
-                        ef = 'UNK'
-                        if 0 <= idx_F < len(parts):
-                            val = parts[idx_F].strip(); ef = val if val else 'UNK'
-                        date_val = parts[idx_DATE].strip() if 0 <= idx_DATE < len(parts) else day.strftime('%Y-%m-%d')
-                        start_in = haversine_km(lat, lon, slat, slon) <= radius_km
-                        end_in = haversine_km(lat, lon, elat, elon) <= radius_km
-                        seg_in = False
-                        if not (start_in or end_in):
-                            if segment_distance_km(lon, lat, slon, slat, elon, elat) <= radius_km:
-                                seg_in = True
-                        if start_in or end_in or seg_in:
-                            aggregated.append({
-                                'start_lat': slat,
-                                'start_lon': slon,
-                                'end_lat': elat,
-                                'end_lon': elon,
-                                'ef': ef,
-                                'date': date_val,
-                                'city_lat': lat,
-                                'city_lon': lon
-                            })
-                        if len(aggregated) >= 8000:
-                            break
-                    if len(aggregated) >= 8000:
-                        break
-                if len(aggregated) >= 8000:
-                    break
-                day = day + timedelta(days=1)
-                sleep(0.25)  # gentle throttle
-            if aggregated:
-                try:
-                    log_tornado(f"Segmented fetch complete: {len(aggregated)} tracks (attempts={attempts}).\n")
-                except Exception:
-                    pass
-                return aggregated, None
-            return None, 'SWDI HTTP 500 and segmented fallback returned no data.'
-        return None, (last_err or 'Unknown SWDI access error')
+                if len(tracks) >= 8000: break
+                got=len(res)
+                if got < params['limit']: break
+                params['offset'] += got
+            return tracks, None
+        except Exception as e:
+            return None, f"StormEvents error: {e}"
 
     # (Removed fetch_tornado_arcgis – ArcGIS dataset no longer used)
 
     def synthesize_reports_from_tracks(tracks):
-        """Create point-style 'reports' from NOAA track start points.
-        Each synthetic report mimics the old IEM structure for UI/log reuse."""
-        reports = []
+        reports=[]
         for t in tracks or []:
             try:
-                reports.append({
-                    'lat': t['start_lat'],
-                    'lon': t['start_lon'],
-                    'valid': t.get('date'),
-                    'magnitude': t.get('ef'),
-                    'city_lat': t.get('city_lat'),
-                    'city_lon': t.get('city_lon'),
-                    'wfo': 'NOAA',
-                    'remark': 'Track start point'
-                })
-            except Exception:
-                continue
+                reports.append({'lat': t['start_lat'],'lon': t['start_lon'],'valid': t.get('date'),'magnitude': t.get('ef'),'city_lat': t.get('city_lat'),'city_lon': t.get('city_lon'),'wfo':'NCEI','remark':'StormEvents start'})
+            except Exception: continue
         return reports
 
     def plot_tornado_reports(city, reports, tracks=None):
@@ -1209,25 +1076,52 @@ if __name__ == "__main__":
         _start_date = tornado_start_entry.get().strip()
         _end_date = tornado_end_entry.get().strip()
         _radius = tornado_radius_var.get()  # km
+        _min_ef = tornado_min_ef_var.get()
+        _include_unknown = tornado_include_unknown_var.get()
         if not _city or not _start_date or not _end_date:
             messagebox.showerror("Error", "City and date range required.")
             return
         # Removed trailing space inside f-string format spec to avoid ValueError
-        log_tornado(f"Fetching NOAA tornado tracks (radius {_radius:.1f} km)...\n", replace=True)
-        city = _city; start_date = _start_date; end_date = _end_date; radius = _radius  # capture
-        def worker(city_=city, start_=start_date, end_=end_date, radius_=radius):
-            tracks, err = fetch_tornado_tracks(city_, start_, end_, radius_)
+        city = _city; start_date = _start_date; end_date = _end_date; radius = _radius; min_ef = _min_ef; include_unknown = _include_unknown  # capture
+        log_tornado(f"Fetching NCEI StormEvents Tornado data (radius {radius:.1f} km, min EF {min_ef}, include unknown: {include_unknown})...\n", replace=True)
+        def worker(city_=city, start_=start_date, end_=end_date, radius_=radius, min_ef_=min_ef, include_unknown_=include_unknown):
+            tracks, err = fetch_tornado_events(city_, start_, end_, radius_)
             if err:
                 log_tornado(err + "\n", replace=True)
                 return
             if not tracks:
-                log_tornado(f"No tornado tracks found near {city_} for given range.\n", replace=True)
+                log_tornado(f"No tornado events found near {city_} for given range.\n", replace=True)
                 return
+            # EF filtering
+            def ef_num(val):
+                try:
+                    return int(val)
+                except Exception:
+                    return None
+            original_count = len(tracks)
+            if min_ef_ != 'Any' or not include_unknown_:
+                try:
+                    min_ef_int = int(min_ef_) if min_ef_ != 'Any' else None
+                except ValueError:
+                    min_ef_int = None
+                filtered = []
+                for t in tracks:
+                    efv = t.get('ef')
+                    num = ef_num(efv)
+                    if num is None:
+                        if include_unknown_:
+                            # Keep unknown only if min EF is 'Any' or zero
+                            if (min_ef_int is None) or (min_ef_int == 0):
+                                filtered.append(t)
+                        # else drop unknown
+                    else:
+                        if (min_ef_int is None) or (num >= min_ef_int):
+                            filtered.append(t)
+                tracks = filtered
+            filtered_count = len(tracks)
             reports = synthesize_reports_from_tracks(tracks)
-            # Sort reports by date
             reports.sort(key=lambda r: r.get('valid') or '')
-            log_tornado(f"Tracks ({len(tracks)}), Synthetic Reports ({len(reports)}):\n", replace=True)
-            # Log a limited list of reports
+            log_tornado(f"Events ({filtered_count} / {original_count} after EF filter), Synthetic Reports ({len(reports)}):\n", replace=True)
             for r in reports[:200]:
                 ef = r['magnitude'] if r['magnitude'] not in (None, '') else 'UNK'
                 log_tornado(f"{r['valid']}: EF{ef} at ({r['lat']:.2f},{r['lon']:.2f}) {r['remark']}\n")
