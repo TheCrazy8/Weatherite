@@ -1152,7 +1152,8 @@ if __name__ == "__main__":
         if not _city or not _start_date or not _end_date:
             messagebox.showerror("Error", "City and date range required.")
             return
-        log_tornado(f"Fetching tornado reports (radius { _radius:.1f } km)...\n", replace=True)
+        # Removed trailing space inside f-string format spec to avoid ValueError
+        log_tornado(f"Fetching tornado reports (radius {_radius:.1f} km)...\n", replace=True)
         city = _city; start_date = _start_date; end_date = _end_date; radius = _radius  # capture
         def worker(city_=city, start_=start_date, end_=end_date, radius_=radius):
             reports, err = fetch_tornado_reports(city_, start_, end_, radius_)
@@ -1234,7 +1235,7 @@ if __name__ == "__main__":
     import tkinter.simpledialog
 
     GITHUB_CLIENT_ID = "Ov23lia3P7WUUFlt8GbM"
-    GITHUB_ACCESS_TOKEN = None
+    GITHUB_ACCESS_TOKEN = "191de177f8412bbe771be12c6dafedddfa320120"
     GITHUB_USER_INFO = None
 
     GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
