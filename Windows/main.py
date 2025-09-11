@@ -914,65 +914,134 @@ if __name__ == "__main__":
     # (Removed fetch_tornado_reports – IEM LSR no longer used)
 
     def fetch_tornado_tracks(city, start_date, end_date, radius_km):
-        """Fetch tornado tracks (begin/end points) from NOAA SWDI and filter by km radius (start or end within radius)."""
+        """Fetch tornado tracks from NOAA SWDI and filter by true km radius.
+        Enhancements:
+          * Robust date parsing (accepts YYYY-MM-DD, trims to YYYYMMDD for API)
+          * Enlarged bbox to capture tracks whose segment passes through radius but endpoints outside circle
+          * Segment distance test (track counted if line from start->end crosses radius)
+          * Fallback alternate URL pattern if primary fails
+        """
+        from datetime import datetime as _dt
+        # Geocode
         lat, lon = get_coordinates(city)
         if lat is None or lon is None:
             return None, f"Unable to geocode city '{city}' for tracks."
-        lat_buffer_deg = radius_km / 111.0
+        # Parse and normalize dates
+        def norm(d):
+            d = d.strip()
+            try:
+                obj = _dt.strptime(d, '%Y-%m-%d')
+            except ValueError:
+                try:
+                    obj = _dt.strptime(d, '%Y%m%d')
+                except ValueError:
+                    return None
+            return obj
+        ds = norm(start_date); de = norm(end_date)
+        if not ds or not de:
+            return None, 'Invalid date(s). Use YYYY-MM-DD.'
+        if ds > de:
+            return None, 'Start date must be before end date.'
+        # Convert to YYYYMMDD for NOAA path
+        s_comp = ds.strftime('%Y%m%d'); e_comp = de.strftime('%Y%m%d')
+        # Bounding box (enlarge slightly so long tracks crossing the circle are included)
+        enlarge = 1.25
+        lat_buffer_deg = (radius_km / 111.0) * enlarge
         cos_lat = max(math.cos(math.radians(lat)), 0.0001)
-        lon_buffer_deg = radius_km / (111.320 * cos_lat)
+        lon_buffer_deg = (radius_km / (111.320 * cos_lat)) * enlarge
         minLat = lat - lat_buffer_deg
         maxLat = lat + lat_buffer_deg
         minLon = lon - lon_buffer_deg
         maxLon = lon + lon_buffer_deg
-        base_url = f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{start_date}/{end_date}?bbox={minLon},{minLat},{maxLon},{maxLat}"
-        try:
-            resp = requests.get(base_url, timeout=20)
+
+        def build_urls():
+            # Known working pattern (range path separated by /)
+            yield f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{s_comp}/{e_comp}?bbox={minLon},{minLat},{maxLon},{maxLat}"
+            # Alternate pattern some older docs reference (colon)
+            yield f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{s_comp}:{e_comp}?bbox={minLon},{minLat},{maxLon},{maxLat}"
+
+        def segment_distance_km(px, py, x1, y1, x2, y2):
+            """Approximate shortest distance from point (px,py) to segment (x1,y1)-(x2,y2) in km using local projection."""
+            # Convert to simple Cartesian (km) around center latitude
+            km_per_deg_lat = 111.0
+            km_per_deg_lon = 111.320 * math.cos(math.radians(py))
+            Xp, Yp = (px * km_per_deg_lon, py * km_per_deg_lat)
+            X1, Y1 = (x1 * km_per_deg_lon, y1 * km_per_deg_lat)
+            X2, Y2 = (x2 * km_per_deg_lon, y2 * km_per_deg_lat)
+            dx = X2 - X1; dy = Y2 - Y1
+            if dx == 0 and dy == 0:
+                return math.hypot(Xp - X1, Yp - Y1)
+            t = ((Xp - X1) * dx + (Yp - Y1) * dy) / (dx*dx + dy*dy)
+            t = max(0, min(1, t))
+            Xc = X1 + t * dx; Yc = Y1 + t * dy
+            return math.hypot(Xp - Xc, Yp - Yc)
+
+        last_err = None
+        for url in build_urls():
+            try:
+                resp = requests.get(url, timeout=30)
+            except Exception as e:
+                last_err = f"Request error: {e}"
+                continue
             if resp.status_code != 200:
-                return None, f"SWDI tracks API error {resp.status_code}."
-            lines = resp.text.splitlines()
+                last_err = f"SWDI HTTP {resp.status_code}"
+                continue
+            text = resp.text
+            if 'ERROR' in text[:200].upper():  # crude check
+                last_err = 'SWDI returned error message.'
+                continue
+            lines = text.splitlines()
             if not lines:
-                return [], None
+                last_err = 'Empty response.'; continue
             header = lines[0].split(',')
             def idx(col):
                 try:
                     return header.index(col)
                 except ValueError:
                     return -1
-            idx_BEGIN_LAT = idx('BEGIN_LAT')
-            idx_BEGIN_LON = idx('BEGIN_LON')
-            idx_END_LAT = idx('END_LAT')
-            idx_END_LON = idx('END_LON')
-            idx_F = idx('TOR_F_SCALE')
-            idx_DATE = idx('BEGIN_DATE')
+            idx_BEGIN_LAT = idx('BEGIN_LAT'); idx_BEGIN_LON = idx('BEGIN_LON')
+            idx_END_LAT = idx('END_LAT'); idx_END_LON = idx('END_LON')
+            idx_F = idx('TOR_F_SCALE'); idx_DATE = idx('BEGIN_DATE')
+            if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
+                last_err = 'Missing expected columns.'; continue
             tracks = []
             for line in lines[1:]:
                 parts = line.split(',')
                 try:
-                    if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
-                        continue
-                    slat = float(parts[idx_BEGIN_LAT])
-                    slon = float(parts[idx_BEGIN_LON])
-                    elat = float(parts[idx_END_LAT])
-                    elon = float(parts[idx_END_LON])
-                    ef = parts[idx_F] if idx_F >= 0 and idx_F < len(parts) else 'UNK'
-                    date = parts[idx_DATE] if idx_DATE >= 0 and idx_DATE < len(parts) else ''
-                    if (haversine_km(lat, lon, slat, slon) <= radius_km) or (haversine_km(lat, lon, elat, elon) <= radius_km):
-                        tracks.append({
-                            'start_lat': slat,
-                            'start_lon': slon,
-                            'end_lat': elat,
-                            'end_lon': elon,
-                            'ef': ef if ef else 'UNK',
-                            'date': date,
-                            'city_lat': lat,
-                            'city_lon': lon
-                        })
+                    slat = float(parts[idx_BEGIN_LAT]); slon = float(parts[idx_BEGIN_LON])
+                    elat = float(parts[idx_END_LAT]); elon = float(parts[idx_END_LON])
                 except Exception:
                     continue
+                ef = 'UNK'
+                if 0 <= idx_F < len(parts):
+                    val = parts[idx_F].strip()
+                    ef = val if val else 'UNK'
+                date_val = ''
+                if 0 <= idx_DATE < len(parts):
+                    date_val = parts[idx_DATE].strip()
+                # Inclusion tests
+                start_in = haversine_km(lat, lon, slat, slon) <= radius_km
+                end_in = haversine_km(lat, lon, elat, elon) <= radius_km
+                seg_in = False
+                if not (start_in or end_in):
+                    # Distance from center to segment
+                    if segment_distance_km(lon, lat, slon, slat, elon, elat) <= radius_km:
+                        seg_in = True
+                if start_in or end_in or seg_in:
+                    tracks.append({
+                        'start_lat': slat,
+                        'start_lon': slon,
+                        'end_lat': elat,
+                        'end_lon': elon,
+                        'ef': ef,
+                        'date': date_val,
+                        'city_lat': lat,
+                        'city_lon': lon
+                    })
+                if len(tracks) >= 8000:  # safety cap
+                    break
             return tracks, None
-        except Exception as e:
-            return None, f"Error fetching tracks: {e}"
+        return None, (last_err or 'Unknown SWDI access error')
 
     # (Removed fetch_tornado_arcgis – ArcGIS dataset no longer used)
 
