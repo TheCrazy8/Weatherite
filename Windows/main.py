@@ -977,19 +977,20 @@ if __name__ == "__main__":
             return math.hypot(Xp - Xc, Yp - Yc)
 
         last_err = None
+        # Primary range attempt
         for url in build_urls():
             try:
                 resp = requests.get(url, timeout=30)
             except Exception as e:
-                last_err = f"Request error: {e}"
-                continue
+                last_err = f"Request error: {e}"; continue
+            if resp.status_code == 500:
+                last_err = 'SWDI HTTP 500'
+                continue  # will consider segmented fallback
             if resp.status_code != 200:
-                last_err = f"SWDI HTTP {resp.status_code}"
-                continue
+                last_err = f"SWDI HTTP {resp.status_code}"; continue
             text = resp.text
-            if 'ERROR' in text[:200].upper():  # crude check
-                last_err = 'SWDI returned error message.'
-                continue
+            if 'ERROR' in text[:200].upper():
+                last_err = 'SWDI returned error message.'; continue
             lines = text.splitlines()
             if not lines:
                 last_err = 'Empty response.'; continue
@@ -1014,17 +1015,12 @@ if __name__ == "__main__":
                     continue
                 ef = 'UNK'
                 if 0 <= idx_F < len(parts):
-                    val = parts[idx_F].strip()
-                    ef = val if val else 'UNK'
-                date_val = ''
-                if 0 <= idx_DATE < len(parts):
-                    date_val = parts[idx_DATE].strip()
-                # Inclusion tests
+                    val = parts[idx_F].strip(); ef = val if val else 'UNK'
+                date_val = parts[idx_DATE].strip() if 0 <= idx_DATE < len(parts) else ''
                 start_in = haversine_km(lat, lon, slat, slon) <= radius_km
                 end_in = haversine_km(lat, lon, elat, elon) <= radius_km
                 seg_in = False
                 if not (start_in or end_in):
-                    # Distance from center to segment
                     if segment_distance_km(lon, lat, slon, slat, elon, elat) <= radius_km:
                         seg_in = True
                 if start_in or end_in or seg_in:
@@ -1038,9 +1034,90 @@ if __name__ == "__main__":
                         'city_lat': lat,
                         'city_lon': lon
                     })
-                if len(tracks) >= 8000:  # safety cap
+                if len(tracks) >= 8000:
                     break
             return tracks, None
+        # Fallback: segmented daily requests if 500 and range reasonable
+        total_days = (de - ds).days + 1
+        if last_err == 'SWDI HTTP 500' and total_days > 1:
+            if total_days > 62:  # arbitrary safeguard
+                return None, 'SWDI HTTP 500 on bulk request; please narrow date range (< 62 days) and try again.'
+            try:
+                log_tornado(f"Server 500 on bulk range; attempting {total_days} daily SWDI requests...\n")
+            except Exception:
+                pass
+            aggregated = []
+            day = ds
+            attempts = 0
+            from time import sleep
+            while day <= de:
+                sday = day.strftime('%Y%m%d')
+                for url in (f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{sday}/{sday}?bbox={minLon},{minLat},{maxLon},{maxLat}",
+                            f"https://www.ncdc.noaa.gov/swdiws/csv/tornadoes/{sday}:{sday}?bbox={minLon},{minLat},{maxLon},{maxLat}"):
+                    attempts += 1
+                    try:
+                        resp = requests.get(url, timeout=25)
+                    except Exception:
+                        continue
+                    if resp.status_code != 200:
+                        continue
+                    lines = resp.text.splitlines()
+                    if not lines:
+                        continue
+                    header = lines[0].split(',')
+                    def idx2(col):
+                        try:
+                            return header.index(col)
+                        except ValueError:
+                            return -1
+                    idx_BEGIN_LAT = idx2('BEGIN_LAT'); idx_BEGIN_LON = idx2('BEGIN_LON')
+                    idx_END_LAT = idx2('END_LAT'); idx_END_LON = idx2('END_LON')
+                    idx_F = idx2('TOR_F_SCALE'); idx_DATE = idx2('BEGIN_DATE')
+                    if min(idx_BEGIN_LAT, idx_BEGIN_LON, idx_END_LAT, idx_END_LON) < 0:
+                        continue
+                    for line2 in lines[1:]:
+                        parts = line2.split(',')
+                        try:
+                            slat = float(parts[idx_BEGIN_LAT]); slon = float(parts[idx_BEGIN_LON])
+                            elat = float(parts[idx_END_LAT]); elon = float(parts[idx_END_LON])
+                        except Exception:
+                            continue
+                        ef = 'UNK'
+                        if 0 <= idx_F < len(parts):
+                            val = parts[idx_F].strip(); ef = val if val else 'UNK'
+                        date_val = parts[idx_DATE].strip() if 0 <= idx_DATE < len(parts) else day.strftime('%Y-%m-%d')
+                        start_in = haversine_km(lat, lon, slat, slon) <= radius_km
+                        end_in = haversine_km(lat, lon, elat, elon) <= radius_km
+                        seg_in = False
+                        if not (start_in or end_in):
+                            if segment_distance_km(lon, lat, slon, slat, elon, elat) <= radius_km:
+                                seg_in = True
+                        if start_in or end_in or seg_in:
+                            aggregated.append({
+                                'start_lat': slat,
+                                'start_lon': slon,
+                                'end_lat': elat,
+                                'end_lon': elon,
+                                'ef': ef,
+                                'date': date_val,
+                                'city_lat': lat,
+                                'city_lon': lon
+                            })
+                        if len(aggregated) >= 8000:
+                            break
+                    if len(aggregated) >= 8000:
+                        break
+                if len(aggregated) >= 8000:
+                    break
+                day = day + timedelta(days=1)
+                sleep(0.25)  # gentle throttle
+            if aggregated:
+                try:
+                    log_tornado(f"Segmented fetch complete: {len(aggregated)} tracks (attempts={attempts}).\n")
+                except Exception:
+                    pass
+                return aggregated, None
+            return None, 'SWDI HTTP 500 and segmented fallback returned no data.'
         return None, (last_err or 'Unknown SWDI access error')
 
     # (Removed fetch_tornado_arcgis – ArcGIS dataset no longer used)
