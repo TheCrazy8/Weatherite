@@ -862,6 +862,8 @@ if __name__ == "__main__":
     tornado_paths_chk = ttk.Checkbutton(tornado_top, text="Show Paths", variable=tornado_show_paths_var)
     tornado_paths_chk.pack(side=tk.LEFT, padx=4)
 
+    # (Removed ArcGIS / IEM options – NOAA SWDI is now sole data source)
+
     # Area frame
     tornado_area = ttk.Frame(tornado_tab)
     tornado_area.pack(fill=tk.BOTH, expand=True)
@@ -909,117 +911,7 @@ if __name__ == "__main__":
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return R * c
 
-    def fetch_tornado_reports(city, start_date, end_date, radius_km):
-        """Fetch tornado Local Storm Reports from IEM (Iowa State) GeoJSON API.
-        Filters by great-circle distance (km) from city center.
-        Handles long date ranges by chunking to avoid HTTP 422 errors.
-        """
-        from datetime import datetime as _dt, timedelta as _td
-        lat, lon = get_coordinates(city)
-        if lat is None or lon is None:
-            return None, f"Unable to geocode city '{city}'."
-        url = "https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py"
-
-        # Parse dates
-        try:
-            ds = _dt.strptime(start_date, "%Y-%m-%d")
-            de = _dt.strptime(end_date, "%Y-%m-%d")
-        except ValueError:
-            return None, "Invalid date format. Use YYYY-MM-DD."
-        if ds > de:
-            return None, "Start date must be before end date."
-
-        total_days = (de - ds).days + 1
-        max_chunk = 30  # days per request
-        results = []
-        # Approx degree bounds for coarse pre-filter
-        lat_buffer_deg = radius_km / 111.0
-        cos_lat = max(math.cos(math.radians(lat)), 0.0001)
-        lon_buffer_deg = radius_km / (111.320 * cos_lat)
-        min_lat = lat - lat_buffer_deg
-        max_lat = lat + lat_buffer_deg
-        min_lon = lon - lon_buffer_deg
-        max_lon = lon + lon_buffer_deg
-
-        def call_chunk(cstart, cend):
-            params = {
-                'sts': f"{cstart.strftime('%Y-%m-%d')} 00:00:00",
-                'ets': f"{cend.strftime('%Y-%m-%d')} 23:59:59",
-                'phenomena': 'TO',
-                'format': 'geojson'
-            }
-            return requests.get(url, params=params, timeout=25)
-
-        # If short range, single call first
-        if total_days <= max_chunk:
-            try:
-                resp = call_chunk(ds, de)
-                if resp.status_code == 422 and total_days > max_chunk:
-                    pass  # will chunk
-                elif resp.status_code != 200:
-                    return None, f"API error {resp.status_code} calling IEM LSR service."
-                else:
-                    data = resp.json()
-                    for f in data.get('features', []):
-                        props = f.get('properties', {})
-                        geom = f.get('geometry', {})
-                        if geom.get('type') == 'Point':
-                            coords = geom.get('coordinates', [])
-                            if len(coords) == 2:
-                                lon_f, lat_f = coords
-                                if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
-                                    if haversine_km(lat, lon, lat_f, lon_f) <= radius_km:
-                                        results.append({
-                                            'lat': lat_f,
-                                            'lon': lon_f,
-                                            'valid': props.get('valid'),
-                                            'magnitude': props.get('magnitude'),
-                                            'city_lat': lat,
-                                            'city_lon': lon,
-                                            'wfo': props.get('wfo'),
-                                            'remark': props.get('remark')
-                                        })
-                    return results, None
-            except Exception as e:
-                return None, f"Error fetching tornado data: {e}"
-
-        # Chunking path
-        if total_days > max_chunk:
-            log_tornado(f"Long range ({total_days} days). Chunking requests (≤{max_chunk} days each)...\n")
-        cur = ds
-        try:
-            while cur <= de:
-                chunk_end = min(cur + _td(days=max_chunk - 1), de)
-                resp = call_chunk(cur, chunk_end)
-                if resp.status_code != 200:
-                    return None, f"Chunk request error {resp.status_code} (range {cur.date()} to {chunk_end.date()})."
-                data = resp.json()
-                for f in data.get('features', []):
-                    props = f.get('properties', {})
-                    geom = f.get('geometry', {})
-                    if geom.get('type') == 'Point':
-                        coords = geom.get('coordinates', [])
-                        if len(coords) == 2:
-                            lon_f, lat_f = coords
-                            if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
-                                if haversine_km(lat, lon, lat_f, lon_f) <= radius_km:
-                                    results.append({
-                                        'lat': lat_f,
-                                        'lon': lon_f,
-                                        'valid': props.get('valid'),
-                                        'magnitude': props.get('magnitude'),
-                                        'city_lat': lat,
-                                        'city_lon': lon,
-                                        'wfo': props.get('wfo'),
-                                        'remark': props.get('remark')
-                                    })
-                cur = chunk_end + _td(days=1)
-                if len(results) > 10000:  # safety cap
-                    log_tornado("Result set truncated at 10,000 records. Narrow date/radius for more precision.\n")
-                    break
-            return results, None
-        except Exception as e:
-            return None, f"Error during chunked fetch: {e}"
+    # (Removed fetch_tornado_reports – IEM LSR no longer used)
 
     def fetch_tornado_tracks(city, start_date, end_date, radius_km):
         """Fetch tornado tracks (begin/end points) from NOAA SWDI and filter by km radius (start or end within radius)."""
@@ -1081,6 +973,28 @@ if __name__ == "__main__":
             return tracks, None
         except Exception as e:
             return None, f"Error fetching tracks: {e}"
+
+    # (Removed fetch_tornado_arcgis – ArcGIS dataset no longer used)
+
+    def synthesize_reports_from_tracks(tracks):
+        """Create point-style 'reports' from NOAA track start points.
+        Each synthetic report mimics the old IEM structure for UI/log reuse."""
+        reports = []
+        for t in tracks or []:
+            try:
+                reports.append({
+                    'lat': t['start_lat'],
+                    'lon': t['start_lon'],
+                    'valid': t.get('date'),
+                    'magnitude': t.get('ef'),
+                    'city_lat': t.get('city_lat'),
+                    'city_lon': t.get('city_lon'),
+                    'wfo': 'NOAA',
+                    'remark': 'Track start point'
+                })
+            except Exception:
+                continue
+        return reports
 
     def plot_tornado_reports(city, reports, tracks=None):
         if not plt:
@@ -1153,37 +1067,30 @@ if __name__ == "__main__":
             messagebox.showerror("Error", "City and date range required.")
             return
         # Removed trailing space inside f-string format spec to avoid ValueError
-        log_tornado(f"Fetching tornado reports (radius {_radius:.1f} km)...\n", replace=True)
+        log_tornado(f"Fetching NOAA tornado tracks (radius {_radius:.1f} km)...\n", replace=True)
         city = _city; start_date = _start_date; end_date = _end_date; radius = _radius  # capture
         def worker(city_=city, start_=start_date, end_=end_date, radius_=radius):
-            reports, err = fetch_tornado_reports(city_, start_, end_, radius_)
+            tracks, err = fetch_tornado_tracks(city_, start_, end_, radius_)
             if err:
                 log_tornado(err + "\n", replace=True)
                 return
-            tracks = []
-            if tornado_show_paths_var.get():
-                log_tornado("Fetching tornado tracks...\n")
-                tracks, terr = fetch_tornado_tracks(city_, start_, end_, radius_)
-                if terr:
-                    log_tornado(terr + "\n")
-            if not reports and not tracks:
-                log_tornado(f"No tornado data found near {city_} for given range.\n", replace=True)
+            if not tracks:
+                log_tornado(f"No tornado tracks found near {city_} for given range.\n", replace=True)
                 return
-            if reports:
-                reports.sort(key=lambda r: r.get('valid') or '')
-                log_tornado(f"Reports ({len(reports)}):\n", replace=True)
-                for r in reports[:250]:
-                    ef = r['magnitude'] if r['magnitude'] not in (None, '') else 'UNK'
-                    log_tornado(f"{r['valid']}: EF{ef} at ({r['lat']:.2f},{r['lon']:.2f}) WFO={r['wfo']}\n")
-                if len(reports) > 250:
-                    log_tornado(f"... truncated {len(reports)-250} more reports ...\n")
-            if tracks:
-                log_tornado(f"Tracks ({len(tracks)}):\n")
-                for t in tracks[:150]:
-                    log_tornado(f"{t['date']}: EF{t['ef']} from ({t['start_lat']:.2f},{t['start_lon']:.2f}) to ({t['end_lat']:.2f},{t['end_lon']:.2f})\n")
-                if len(tracks) > 150:
-                    log_tornado(f"... truncated {len(tracks)-150} more tracks ...\n")
-            plot_tornado_reports(city_, reports, tracks if tracks else None)
+            reports = synthesize_reports_from_tracks(tracks)
+            # Sort reports by date
+            reports.sort(key=lambda r: r.get('valid') or '')
+            log_tornado(f"Tracks ({len(tracks)}), Synthetic Reports ({len(reports)}):\n", replace=True)
+            # Log a limited list of reports
+            for r in reports[:200]:
+                ef = r['magnitude'] if r['magnitude'] not in (None, '') else 'UNK'
+                log_tornado(f"{r['valid']}: EF{ef} at ({r['lat']:.2f},{r['lon']:.2f}) {r['remark']}\n")
+            if len(reports) > 200:
+                log_tornado(f"... truncated {len(reports)-200} more synthetic reports ...\n")
+            if tornado_show_paths_var.get():
+                plot_tornado_reports(city_, reports, tracks)
+            else:
+                plot_tornado_reports(city_, reports, None)
         threading.Thread(target=worker, daemon=True).start()
     tornado_fetch_btn.config(command=load_tornado_history)
 
@@ -1227,82 +1134,114 @@ if __name__ == "__main__":
     status_label.pack(anchor="w", padx=5, pady=5)
 
 
-    # --- GitHub OAuth App Authentication for User Identity ---
+    # --- GitHub OAuth (Improved: Device Flow, no embedded secret) ---
+    # Why: A packaged desktop EXE cannot reliably hide a client secret. GitHub Device Flow removes the need for one.
     import webbrowser
-    import socket
-    import urllib.parse
     import threading
-    import tkinter.simpledialog
+    import time
 
-    GITHUB_CLIENT_ID = "Ov23lia3P7WUUFlt8GbM"
-    GITHUB_ACCESS_TOKEN = "191de177f8412bbe771be12c6dafedddfa320120"
-    GITHUB_USER_INFO = None
-
-    GITHUB_OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+    GITHUB_CLIENT_ID = "Ov23lia3P7WUUFlt8GbM"  # Public ID (safe)
+    GITHUB_SCOPE = "read:user user:email"
+    GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code"
     GITHUB_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token"
-    GITHUB_OAUTH_SCOPE = "read:user user:email"
-    LOCAL_SERVER_PORT = 8765
+    GITHUB_USER_API = "https://api.github.com/user"
 
-    redirect_uri = f"http://localhost:{LOCAL_SERVER_PORT}/callback"
-    auth_url = f"{GITHUB_OAUTH_AUTHORIZE_URL}?client_id={GITHUB_CLIENT_ID}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope={GITHUB_OAUTH_SCOPE}"
-    # Defer opening browser until user clicks sign-in
+    GITHUB_ACCESS_TOKEN = None
+    GITHUB_USER_INFO = None
+    _device_poll_stop = False
 
-    def run_local_server_for_code():
-        code = None
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('localhost', LOCAL_SERVER_PORT))
-        server.listen(1)
-        conn, addr = server.accept()
-        request = conn.recv(1024).decode()
-        first_line = request.split('\r\n')[0]
-        if 'GET /callback?' in first_line:
-            query = first_line.split(' ')[1]
-            params = urllib.parse.parse_qs(urllib.parse.urlparse(query).query)
-            code = params.get('code', [None])[0]
-        response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nLogin complete. You may close this window."
-        conn.sendall(response.encode())
-        conn.close()
-        server.close()
-        return code
+    def _github_device_start():
+        data = {"client_id": GITHUB_CLIENT_ID, "scope": GITHUB_SCOPE}
+        try:
+            r = requests.post(GITHUB_DEVICE_CODE_URL, data=data, headers={"Accept": "application/json"}, timeout=15)
+            if r.status_code != 200:
+                return None, f"GitHub device start error {r.status_code}"
+            return r.json(), None
+        except Exception as e:
+            return None, f"GitHub device start exception: {e}"
 
-    def get_github_access_token(code):
-        client_secret = "191de177f8412bbe771be12c6dafedddfa320120"
-        return None
+    def _github_poll(device_code, interval, expires_in):
+        global GITHUB_ACCESS_TOKEN, GITHUB_USER_INFO, _device_poll_stop
+        deadline = time.time() + expires_in
+        while time.time() < deadline and not _device_poll_stop:
+            try:
+                payload = {
+                    "client_id": GITHUB_CLIENT_ID,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+                }
+                r = requests.post(GITHUB_OAUTH_TOKEN_URL, data=payload, headers={"Accept": "application/json"}, timeout=15)
+                if r.status_code != 200:
+                    time.sleep(interval)
+                    continue
+                data = r.json()
+                if 'access_token' in data:
+                    GITHUB_ACCESS_TOKEN = data['access_token']
+                    ui = requests.get(GITHUB_USER_API, headers={"Authorization": f"Bearer {GITHUB_ACCESS_TOKEN}", "Accept": "application/vnd.github+json"}, timeout=15)
+                    if ui.status_code == 200:
+                        GITHUB_USER_INFO = ui.json()
+                        login = GITHUB_USER_INFO.get('login', '?')
+                        root.after(0, lambda: status_var.set(f"Signed in with GitHub: {login}"))
+                    else:
+                        root.after(0, lambda: status_var.set("GitHub sign-in succeeded, user fetch failed."))
+                    return
+                error = data.get('error')
+                if error == 'authorization_pending':
+                    pass
+                elif error == 'slow_down':
+                    interval += 2
+                elif error == 'expired_token':
+                    root.after(0, lambda: status_var.set("GitHub code expired. Try again."))
+                    return
+                else:
+                    if error:
+                        root.after(0, lambda e=error: status_var.set(f"GitHub auth error: {e}"))
+                    return
+            except Exception as e:
+                root.after(0, lambda: status_var.set(f"GitHub poll err: {e}"))
+                return
+            time.sleep(interval)
+        if not GITHUB_ACCESS_TOKEN and not _device_poll_stop:
+            root.after(0, lambda: status_var.set("GitHub sign-in timed out."))
 
-    def get_github_user_info(token):
-        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
-        resp = requests.get("https://api.github.com/user", headers=headers)
-        if resp.status_code == 200:
-            return resp.json()
-        return None
-
-    def oauth_flow():
-        global GITHUB_ACCESS_TOKEN, GITHUB_USER_INFO
-        code = run_local_server_for_code()
-        if code:
-            GITHUB_ACCESS_TOKEN = "191de177f8412bbe771be12c6dafedddfa320120"
-            if GITHUB_ACCESS_TOKEN:
-                GITHUB_USER_INFO = get_github_user_info(GITHUB_ACCESS_TOKEN)
-            else:
-                GITHUB_USER_INFO = None
-        else:
-            GITHUB_ACCESS_TOKEN = None
-            GITHUB_USER_INFO = None
+    def cancel_github_login():
+        global _device_poll_stop
+        _device_poll_stop = True
+        status_var.set("GitHub sign-in canceled.")
+        cancel_btn.configure(state='disabled')
+        login_button.configure(state='normal')
 
     def start_github_login():
-        status_var.set("Starting GitHub OAuth in browser...")
-        webbrowser.open(auth_url)
+        global _device_poll_stop
+        _device_poll_stop = False
+        status_var.set("Starting GitHub Device Flow...")
+        login_button.configure(state='disabled')
+        cancel_btn.configure(state='normal')
         def runner():
-            oauth_flow()
-            if GITHUB_USER_INFO:
-                username = GITHUB_USER_INFO.get("login", "Unknown")
-                user_id = GITHUB_USER_INFO.get("id", "Unknown")
-                root.after(0, lambda: status_var.set(f"Signed in with GitHub: {username} (ID: {user_id})"))
-            else:
-                root.after(0, lambda: status_var.set("GitHub sign-in failed or canceled."))
+            info, err = _github_device_start()
+            if err or not info:
+                root.after(0, lambda: (status_var.set(err or "Device flow init failed"), login_button.configure(state='normal'), cancel_btn.configure(state='disabled')))
+                return
+            user_code = info['user_code']
+            verify_uri = info['verification_uri']
+            interval = info.get('interval', 5)
+            expires_in = info.get('expires_in', 900)
+            root.after(0, lambda: status_var.set(f"Open {verify_uri} and enter code: {user_code} (copied)"))
+            try:
+                webbrowser.open(verify_uri)
+            except Exception:
+                pass
+            try:
+                root.clipboard_clear(); root.clipboard_append(user_code)
+            except Exception:
+                pass
+            _github_poll(info['device_code'], interval, expires_in)
+            root.after(0, lambda: (login_button.configure(state='normal'), cancel_btn.configure(state='disabled')))
         threading.Thread(target=runner, daemon=True).start()
 
     login_button = ttk.Button(accounts_area_frame, text="Sign in with GitHub", command=start_github_login)
     login_button.pack(anchor='w', padx=5, pady=5)
+    cancel_btn = ttk.Button(accounts_area_frame, text="Cancel GitHub Sign-In", command=cancel_github_login, state='disabled')
+    cancel_btn.pack(anchor='w', padx=5, pady=2)
 
     root.mainloop()
