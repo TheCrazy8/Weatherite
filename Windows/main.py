@@ -949,53 +949,90 @@ if __name__ == "__main__":
         min_lat = lat - lat_buf; max_lat = lat + lat_buf
         min_lon = lon - lon_buf; max_lon = lon + lon_buf
         base = "https://www.ncei.noaa.gov/access/services/search/v1/data"
-        params = {
-            'dataset': 'stormevents', 'dataType': 'details',
-            'startDate': ds.strftime('%Y-%m-%d'), 'endDate': de.strftime('%Y-%m-%d'),
-            'filter': 'eventType:eq:Tornado',
-            'boundingBox': f"{min_lat},{min_lon},{max_lat},{max_lon}",
-            'limit': 10000, 'offset': 0, 'format': 'json'
-        }
-        tracks = []; seen=set()
+        # We'll try several parameter variants because the API can 400 on unknown keys.
+        param_variants = [
+            {'filter': 'eventType:eq:Tornado'},              # original guess
+            {'filters': 'eventType:eq:Tornado'},             # plural variant
+            {'eventType': 'Tornado'}                         # direct key
+        ]
+        tracks = []; seen=set(); last_error_text = None
         def within(slat, slon, elat, elon):
             if haversine_km(lat, lon, slat, slon) <= radius_km: return True
             if haversine_km(lat, lon, elat, elon) <= radius_km: return True
             mid_lat=(slat+elat)/2.0; mid_lon=(slon+elon)/2.0
             return haversine_km(lat, lon, mid_lat, mid_lon) <= radius_km
         try:
-            while True:
-                r = requests.get(base, params=params, timeout=40)
-                if r.status_code != 200:
-                    return None, f"StormEvents HTTP {r.status_code}"
-                js = r.json(); res = js.get('results') or []
-                if not res: break
-                for ev in res:
+            for variant in param_variants:
+                tracks.clear(); seen.clear()
+                offset = 0
+                limit = 1000  # be conservative; large limits can trigger 400
+                while True:
+                    params = {
+                        'dataset': 'stormevents', 'dataType': 'details',
+                        'startDate': ds.strftime('%Y-%m-%d'), 'endDate': de.strftime('%Y-%m-%d'),
+                        'boundingBox': f"{min_lat},{min_lon},{max_lat},{max_lon}",
+                        'limit': limit, 'offset': offset, 'format': 'json'
+                    }
+                    params.update(variant)
+                    r = requests.get(base, params=params, timeout=40)
+                    if r.status_code == 400:
+                        # capture text & try next variant
+                        try:
+                            last_error_text = r.text[:300]
+                        except Exception:
+                            last_error_text = f"HTTP 400 (unable to read body)"
+                        break  # break inner; try next variant
+                    if r.status_code != 200:
+                        try:
+                            last_error_text = f"HTTP {r.status_code}: {r.text[:200]}"
+                        except Exception:
+                            last_error_text = f"HTTP {r.status_code} (no body)"
+                        break
                     try:
-                        evid = ev.get('eventId') or ev.get('episodeId') or id(ev)
-                        if evid in seen: continue
-                        slat = float(ev.get('beginLat', ev.get('beginLatitude', 'nan')))
-                        slon = float(ev.get('beginLon', ev.get('beginLongitude', 'nan')))
-                        elat = float(ev.get('endLat', ev.get('endLatitude', slat)))
-                        elon = float(ev.get('endLon', ev.get('endLongitude', slon)))
-                        if any(math.isnan(x) for x in [slat, slon]): continue
-                        if not within(slat, slon, elat, elon): continue
-                        mag = ev.get('magnitude'); ef='UNK'
-                        if mag not in (None, ''):
-                            try:
-                                mv=int(float(mag));
-                                if 0<=mv<=5: ef=str(mv)
-                            except Exception: pass
-                        date_str=(ev.get('beginDateTime') or '')[:10]
-                        tracks.append({'start_lat': slat,'start_lon': slon,'end_lat': elat,'end_lon': elon,'ef': ef,'date': date_str,'city_lat': lat,'city_lon': lon})
-                        seen.add(evid)
-                        if len(tracks) >= 8000: break
-                    except Exception:
-                        continue
-                if len(tracks) >= 8000: break
-                got=len(res)
-                if got < params['limit']: break
-                params['offset'] += got
-            return tracks, None
+                        js = r.json()
+                    except Exception as je:
+                        last_error_text = f"JSON decode error: {je}"
+                        break
+                    res = js.get('results') or []
+                    if not res:
+                        # empty for this variant; treat as finished
+                        break
+                    for ev in res:
+                        try:
+                            evid = ev.get('eventId') or ev.get('episodeId') or id(ev)
+                            if evid in seen: continue
+                            slat = float(ev.get('beginLat', ev.get('beginLatitude', 'nan')))
+                            slon = float(ev.get('beginLon', ev.get('beginLongitude', 'nan')))
+                            elat = float(ev.get('endLat', ev.get('endLatitude', slat)))
+                            elon = float(ev.get('endLon', ev.get('endLongitude', slon)))
+                            if any(math.isnan(x) for x in [slat, slon]): continue
+                            if not within(slat, slon, elat, elon): continue
+                            mag = ev.get('magnitude'); ef='UNK'
+                            if mag not in (None, ''):
+                                try:
+                                    mv=int(float(mag))
+                                    if 0<=mv<=5: ef=str(mv)
+                                except Exception: pass
+                            date_str=(ev.get('beginDateTime') or '')[:10]
+                            tracks.append({'start_lat': slat,'start_lon': slon,'end_lat': elat,'end_lon': elon,'ef': ef,'date': date_str,'city_lat': lat,'city_lon': lon})
+                            seen.add(evid)
+                            if len(tracks) >= 8000: break
+                        except Exception:
+                            continue
+                    if len(tracks) >= 8000: break
+                    got = len(res)
+                    if got < limit:
+                        # last page
+                        break
+                    offset += got
+                # if we actually collected data with this variant, return it
+                if tracks:
+                    return tracks, None
+                # if variant ended with non-400 and no data, still might try next variant
+            # All variants failed / returned nothing
+            if last_error_text:
+                return None, f"StormEvents query failed (400/err). Last response: {last_error_text}"
+            return None, "StormEvents: no data returned (check date range or parameters)."
         except Exception as e:
             return None, f"StormEvents error: {e}"
 
