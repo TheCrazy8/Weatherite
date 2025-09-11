@@ -1265,7 +1265,7 @@ if __name__ == "__main__":
         return code
 
     def get_github_access_token(code):
-        client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
+        client_secret = "191de177f8412bbe771be12c6dafedddfa320120"
         return None
 
     def get_github_user_info(token):
