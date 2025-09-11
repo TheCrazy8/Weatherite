@@ -773,42 +773,49 @@ if __name__ == "__main__":
     radar_img_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def fetch_weather_news():
-        try:
-            import feedparser
-        except ImportError:
+        """Fetch weather news headlines safely (UI updates on main thread)."""
+        def set_message(msg: str):
             news_text.config(state='normal')
             news_text.delete(1.0, tk.END)
-            news_text.insert(tk.END, "feedparser not installed. Run 'pip install feedparser'.")
-            news_text.config(state='disabled')
-            return
-        url = "https://weather.com/rss"
-        try:
-            feed = feedparser.parse(url)
-            headlines = []
-            for entry in feed.entries[:10]:
-                headlines.append(f"- {entry.title}\n{entry.link}\n")
-            news_text.config(state='normal')
-            news_text.delete(1.0, tk.END)
-            news_text.insert(tk.END, "\n".join(headlines) if headlines else "No news found.")
-            news_text.config(state='disabled')
-        except Exception as e:
-            news_text.config(state='normal')
-            news_text.delete(1.0, tk.END)
-            news_text.insert(tk.END, f"Error fetching news: {e}")
+            news_text.insert(tk.END, msg)
             news_text.config(state='disabled')
 
+        try:
+            import feedparser  # type: ignore
+        except ImportError:
+            root.after(0, lambda: set_message("feedparser not installed. Install with: pip install feedparser"))
+            return
+
+        url = "https://weather.com/rss"
+
+        def worker():
+            try:
+                feed = feedparser.parse(url)
+                headlines = []
+                for entry in getattr(feed, 'entries', [])[:10]:
+                    title = getattr(entry, 'title', 'No Title')
+                    link = getattr(entry, 'link', '')
+                    headlines.append(f"- {title}\n{link}\n")
+                msg = "\n".join(headlines) if headlines else "No news found." if headlines is not None else "No news found."
+            except Exception as e:
+                msg = f"Error fetching news: {e}"
+            root.after(0, lambda m=msg: set_message(m))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def fetch_radar_image():
+        """Fetch simple radar tile and update UI safely."""
         radar_url = "https://tilecache.rainviewer.com/v2/radar/nowcast/0/0/0/2/256.png"
         try:
-            response = requests.get(radar_url)
-            if response.status_code == 200:
-                img_data = response.content
-                img = Image.open(io.BytesIO(img_data)).resize((512, 512))
-                tk_img = ImageTk.PhotoImage(img)
-                def update_image():
-                    radar_img_label.config(image=tk_img, text='')
-                    radar_img_label.image = tk_img
-                root.after(0, update_image)
+            response = requests.get(radar_url, timeout=15)
+            if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image'):
+                try:
+                    img_data = response.content
+                    img = Image.open(io.BytesIO(img_data)).resize((512, 512))
+                    tk_img = ImageTk.PhotoImage(img)
+                    root.after(0, lambda i=tk_img: (radar_img_label.config(image=i, text=''), setattr(radar_img_label, 'image', i)))
+                except Exception as e:
+                    root.after(0, lambda: radar_img_label.config(image='', text=f'Radar decode error: {e}'))
             else:
                 root.after(0, lambda: radar_img_label.config(image='', text='Radar map not available.'))
         except Exception as e:
@@ -879,57 +886,129 @@ if __name__ == "__main__":
     }
 
     def log_tornado(text, replace=False):
-        tornado_output.config(state='normal')
-        if replace:
-            tornado_output.delete(1.0, tk.END)
-        tornado_output.insert(tk.END, text)
-        tornado_output.see(tk.END)
-        tornado_output.config(state='disabled')
+        # Ensure UI updates occur on main thread
+        def _do():
+            tornado_output.config(state='normal')
+            if replace:
+                tornado_output.delete(1.0, tk.END)
+            tornado_output.insert(tk.END, text)
+            tornado_output.see(tk.END)
+            tornado_output.config(state='disabled')
+        try:
+            root.after(0, _do)
+        except Exception:
+            # Fallback (in case root not yet defined in some context)
+            _do()
 
     def fetch_tornado_reports(city, start_date, end_date, radius_deg):
-        """Fetch tornado Local Storm Reports from IEM (Iowa State) GeoJSON API and filter by bounding box around city."""
+        """Fetch tornado Local Storm Reports from IEM (Iowa State) GeoJSON API.
+        Handles long date ranges by chunking to avoid HTTP 422 errors.
+        """
+        from datetime import datetime as _dt, timedelta as _td
         lat, lon = get_coordinates(city)
         if lat is None or lon is None:
             return None, f"Unable to geocode city '{city}'."
-        params = {
-            'sts': f"{start_date} 00:00:00",
-            'ets': f"{end_date} 23:59:59",
-            'phenomena': 'TO',
-            'format': 'geojson'
-        }
         url = "https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py"
+
+        # Parse dates
         try:
-            resp = requests.get(url, params=params, timeout=15)
-            if resp.status_code != 200:
-                return None, f"API error {resp.status_code} calling IEM LSR service."
-            data = resp.json()
-            features = data.get('features', [])
-            min_lat = lat - radius_deg
-            max_lat = lat + radius_deg
-            min_lon = lon - radius_deg
-            max_lon = lon + radius_deg
-            filtered = []
-            for f in features:
-                props = f.get('properties', {})
-                geom = f.get('geometry', {})
-                if geom.get('type') == 'Point':
-                    coords = geom.get('coordinates', [])  # [lon, lat]
-                    if len(coords) == 2:
-                        lon_f, lat_f = coords
-                        if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
-                            filtered.append({
-                                'lat': lat_f,
-                                'lon': lon_f,
-                                'valid': props.get('valid'),
-                                'magnitude': props.get('magnitude'),  # EF rating maybe
-                                'city_lat': lat,
-                                'city_lon': lon,
-                                'wfo': props.get('wfo'),
-                                'remark': props.get('remark')
-                            })
-            return filtered, None
+            ds = _dt.strptime(start_date, "%Y-%m-%d")
+            de = _dt.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            return None, "Invalid date format. Use YYYY-MM-DD." 
+        if ds > de:
+            return None, "Start date must be before end date." 
+
+        total_days = (de - ds).days + 1
+        max_chunk = 30  # days per request
+        results = []
+        min_lat = lat - radius_deg
+        max_lat = lat + radius_deg
+        min_lon = lon - radius_deg
+        max_lon = lon + radius_deg
+
+        def call_chunk(cstart, cend):
+            params = {
+                'sts': f"{cstart.strftime('%Y-%m-%d')} 00:00:00",
+                'ets': f"{cend.strftime('%Y-%m-%d')} 23:59:59",
+                'phenomena': 'TO',
+                'format': 'geojson'
+            }
+            r = requests.get(url, params=params, timeout=25)
+            return r
+
+        # If short range, single call first
+        attempts = []
+        if total_days <= max_chunk:
+            try:
+                resp = call_chunk(ds, de)
+                attempts.append(resp.status_code)
+                if resp.status_code == 422 and total_days > max_chunk:
+                    # fall through to chunking
+                    pass
+                elif resp.status_code != 200:
+                    return None, f"API error {resp.status_code} calling IEM LSR service."
+                else:
+                    data = resp.json()
+                    features = data.get('features', [])
+                    for f in features:
+                        props = f.get('properties', {})
+                        geom = f.get('geometry', {})
+                        if geom.get('type') == 'Point':
+                            coords = geom.get('coordinates', [])
+                            if len(coords) == 2:
+                                lon_f, lat_f = coords
+                                if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
+                                    results.append({
+                                        'lat': lat_f,
+                                        'lon': lon_f,
+                                        'valid': props.get('valid'),
+                                        'magnitude': props.get('magnitude'),
+                                        'city_lat': lat,
+                                        'city_lon': lon,
+                                        'wfo': props.get('wfo'),
+                                        'remark': props.get('remark')
+                                    })
+                    return results, None
+            except Exception as e:
+                return None, f"Error fetching tornado data: {e}" 
+
+        # Chunking path
+        if total_days > max_chunk:
+            log_tornado(f"Long range ({total_days} days). Chunking requests (≤{max_chunk} days each)...\n")
+        cur = ds
+        try:
+            while cur <= de:
+                chunk_end = min(cur + _td(days=max_chunk-1), de)
+                resp = call_chunk(cur, chunk_end)
+                if resp.status_code != 200:
+                    return None, f"Chunk request error {resp.status_code} (range {cur.date()} to {chunk_end.date()})."
+                data = resp.json()
+                for f in data.get('features', []):
+                    props = f.get('properties', {})
+                    geom = f.get('geometry', {})
+                    if geom.get('type') == 'Point':
+                        coords = geom.get('coordinates', [])
+                        if len(coords) == 2:
+                            lon_f, lat_f = coords
+                            if min_lat <= lat_f <= max_lat and min_lon <= lon_f <= max_lon:
+                                results.append({
+                                    'lat': lat_f,
+                                    'lon': lon_f,
+                                    'valid': props.get('valid'),
+                                    'magnitude': props.get('magnitude'),
+                                    'city_lat': lat,
+                                    'city_lon': lon,
+                                    'wfo': props.get('wfo'),
+                                    'remark': props.get('remark')
+                                })
+                cur = chunk_end + _td(days=1)
+                if len(results) > 10000:  # safety cap
+                    log_tornado("Result set truncated at 10,000 records. Narrow date/radius for more precision.\n")
+                    break
+            return results, None
         except Exception as e:
-            return None, f"Error fetching tornado data: {e}"
+            return None, f"Error during chunked fetch: {e}"
 
     def fetch_tornado_tracks(city, start_date, end_date, radius_deg):
         """Fetch tornado tracks (begin/end points) from NOAA SWDI and filter to bounding box."""
@@ -1053,29 +1132,29 @@ if __name__ == "__main__":
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def load_tornado_history():
-        city = tornado_city_entry.get().strip()
-        start_date = tornado_start_entry.get().strip()
-        end_date = tornado_end_entry.get().strip()
-        radius = tornado_radius_var.get()
-        if not city or not start_date or not end_date:
+        _city = tornado_city_entry.get().strip()
+        _start_date = tornado_start_entry.get().strip()
+        _end_date = tornado_end_entry.get().strip()
+        _radius = tornado_radius_var.get()
+        if not _city or not _start_date or not _end_date:
             messagebox.showerror("Error", "City and date range required.")
             return
         log_tornado("Fetching tornado reports...\n", replace=True)
-        def worker():
-            reports, err = fetch_tornado_reports(city, start_date, end_date, radius)
+        city = _city; start_date = _start_date; end_date = _end_date; radius = _radius  # capture
+        def worker(city_=city, start_=start_date, end_=end_date, radius_=radius):
+            reports, err = fetch_tornado_reports(city_, start_, end_, radius_)
             if err:
                 log_tornado(err + "\n", replace=True)
                 return
             tracks = []
             if tornado_show_paths_var.get():
                 log_tornado("Fetching tornado tracks...\n")
-                tracks, terr = fetch_tornado_tracks(city, start_date, end_date, radius)
+                tracks, terr = fetch_tornado_tracks(city_, start_, end_, radius_)
                 if terr:
                     log_tornado(terr + "\n")
             if not reports and not tracks:
-                log_tornado(f"No tornado data found near {city} for given range.\n", replace=True)
+                log_tornado(f"No tornado data found near {city_} for given range.\n", replace=True)
                 return
-            # Sort by time for reports
             if reports:
                 reports.sort(key=lambda r: r.get('valid') or '')
                 log_tornado(f"Reports ({len(reports)}):\n", replace=True)
@@ -1090,7 +1169,7 @@ if __name__ == "__main__":
                     log_tornado(f"{t['date']}: EF{t['ef']} from ({t['start_lat']:.2f},{t['start_lon']:.2f}) to ({t['end_lat']:.2f},{t['end_lon']:.2f})\n")
                 if len(tracks) > 150:
                     log_tornado(f"... truncated {len(tracks)-150} more tracks ...\n")
-            plot_tornado_reports(city, reports, tracks if tracks else None)
+            plot_tornado_reports(city_, reports, tracks if tracks else None)
         threading.Thread(target=worker, daemon=True).start()
     tornado_fetch_btn.config(command=load_tornado_history)
 
@@ -1152,7 +1231,7 @@ if __name__ == "__main__":
 
     redirect_uri = f"http://localhost:{LOCAL_SERVER_PORT}/callback"
     auth_url = f"{GITHUB_OAUTH_AUTHORIZE_URL}?client_id={GITHUB_CLIENT_ID}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope={GITHUB_OAUTH_SCOPE}"
-    webbrowser.open(auth_url)
+    # Defer opening browser until user clicks sign-in
 
     def run_local_server_for_code():
         code = None
@@ -1173,16 +1252,25 @@ if __name__ == "__main__":
         return code
 
     def get_github_access_token(code):
+        client_secret = os.environ.get("GITHUB_CLIENT_SECRET")
+        if not client_secret:
+            # Ask user (simple dialog) once; they can cancel
+            client_secret = tkinter.simpledialog.askstring("GitHub Secret", "Enter GitHub OAuth App Client Secret (not stored):", show='*')
+        if not client_secret:
+            return None
         data = {
             "client_id": GITHUB_CLIENT_ID,
-            "client_secret": "191de177f8412bbe771be12c6dafedddfa320120",  # <-- Replace with your secret
+            "client_secret": client_secret,
             "code": code,
             "redirect_uri": redirect_uri
         }
         headers = {"Accept": "application/json"}
-        resp = requests.post(GITHUB_OAUTH_TOKEN_URL, data=data, headers=headers)
-        if resp.status_code == 200:
-            return resp.json().get("access_token")
+        try:
+            resp = requests.post(GITHUB_OAUTH_TOKEN_URL, data=data, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                return resp.json().get("access_token")
+        except Exception as e:
+            print(f"Token exchange error: {e}")
         return None
 
     def get_github_user_info(token):
@@ -1205,16 +1293,20 @@ if __name__ == "__main__":
             GITHUB_ACCESS_TOKEN = None
             GITHUB_USER_INFO = None
 
-    t = threading.Thread(target=oauth_flow)
-    t.start()
-    t.join()
+    def start_github_login():
+        status_var.set("Starting GitHub OAuth in browser...")
+        webbrowser.open(auth_url)
+        def runner():
+            oauth_flow()
+            if GITHUB_USER_INFO:
+                username = GITHUB_USER_INFO.get("login", "Unknown")
+                user_id = GITHUB_USER_INFO.get("id", "Unknown")
+                root.after(0, lambda: status_var.set(f"Signed in with GitHub: {username} (ID: {user_id})"))
+            else:
+                root.after(0, lambda: status_var.set("GitHub sign-in failed or canceled."))
+        threading.Thread(target=runner, daemon=True).start()
 
-    # Example: show signed-in user info in status label
-    if GITHUB_USER_INFO:
-        username = GITHUB_USER_INFO.get("login", "Unknown")
-        user_id = GITHUB_USER_INFO.get("id", "Unknown")
-        status_var.set(f"Signed in with GitHub: {username} (ID: {user_id})")
-    else:
-        status_var.set("GitHub sign-in failed.")
+    login_button = ttk.Button(accounts_area_frame, text="Sign in with GitHub", command=start_github_login)
+    login_button.pack(anchor='w', padx=5, pady=5)
 
     root.mainloop()
