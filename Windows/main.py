@@ -246,6 +246,9 @@ def get_google_static_map(lat, lon):
 
 MAP_IMAGE_SIZE = (450, 450)
 MAP_TILE_SIZE = 256
+HTTP_TIMEOUT = 15
+MAX_MERCATOR_LATITUDE = 85.05112878
+MAP_BACKGROUND_COLOR = (240, 240, 240, 255)
 OPENSTREETMAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 TOMORROW_TILE_URLS = (
     "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey={api_key}",
@@ -257,11 +260,11 @@ def get_image(url):
     if not url:
         return None
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
         if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/png'):
             return Image.open(io.BytesIO(response.content)).convert('RGBA')
     except Exception as e:
-        print(f"Image download error: {e}")
+        print(f"Image download error for {url}: {e}")
     return None
 
 def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
@@ -280,7 +283,7 @@ def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
     return None
 
 def latlon_to_world_pixel(lat, lon, zoom):
-    lat = max(min(lat, 85.05112878), -85.05112878)
+    lat = max(min(lat, MAX_MERCATOR_LATITUDE), -MAX_MERCATOR_LATITUDE)
     scale = MAP_TILE_SIZE * (2 ** zoom)
     x = (lon + 180.0) / 360.0 * scale
     lat_rad = math.radians(lat)
@@ -298,7 +301,7 @@ def get_weather_map_image(lat, lon, zoom, layer_code=None, tomorrow_api_key=None
     start_y = int(math.floor(top / MAP_TILE_SIZE))
     end_y = int(math.floor((top + height - 1) / MAP_TILE_SIZE))
 
-    base_canvas = Image.new('RGBA', MAP_IMAGE_SIZE, (240, 240, 240, 255))
+    base_canvas = Image.new('RGBA', MAP_IMAGE_SIZE, MAP_BACKGROUND_COLOR)
     overlay_canvas = Image.new('RGBA', MAP_IMAGE_SIZE, (0, 0, 0, 0)) if layer_code and tomorrow_api_key else None
 
     for tile_x in range(start_x, end_x + 1):
