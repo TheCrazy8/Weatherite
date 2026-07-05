@@ -257,15 +257,6 @@ TOMORROW_TILE_URLS = (
     "https://api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/{layer}/now.png?apikey={api_key}",
 )
 
-def redact_url(url):
-    if 'apikey=' not in url:
-        return url
-    prefix, key_part = url.split('apikey=', 1)
-    if '&' in key_part:
-        _, suffix = key_part.split('&', 1)
-        return f"{prefix}apikey=[REDACTED]&{suffix}"
-    return f"{prefix}apikey=[REDACTED]"
-
 def get_image(url):
     if not url:
         return None
@@ -274,7 +265,7 @@ def get_image(url):
         if response.status_code == 200 and response.headers.get('Content-Type', '').lower().startswith('image/png'):
             return Image.open(io.BytesIO(response.content)).convert('RGBA')
     except Exception as e:
-        print(f"Image download error for {redact_url(url)}: {e}")
+        print(f"Image download error: {e}")
     return None
 
 def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
