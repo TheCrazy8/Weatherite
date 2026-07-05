@@ -433,12 +433,18 @@ def show_weather():
             layer = layer_var.get()
             zoom = int(zoom_var.get())
             layer_code = tomorrow_layers.get(layer, None)
-            final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
-            def show_map():
-                tk_img = ImageTk.PhotoImage(final_img)
-                map_panel.config(image=tk_img, text='')
-                map_panel.image = tk_img
-            root.after(0, show_map)
+            try:
+                final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
+                if final_img is None:
+                    root.after(0, lambda: map_panel.config(image='', text='Map not available (render error)'))
+                    return
+                def show_map():
+                    tk_img = ImageTk.PhotoImage(final_img)
+                    map_panel.config(image=tk_img, text='')
+                    map_panel.image = tk_img
+                root.after(0, show_map)
+            except Exception as e:
+                root.after(0, lambda error=str(e): map_panel.config(image='', text=f'Map error: {error}'))
         else:
             root.after(0, lambda: map_panel.config(image='', text='Map not available (no coordinates)'))
     threading.Thread(target=update_map, daemon=True).start()
