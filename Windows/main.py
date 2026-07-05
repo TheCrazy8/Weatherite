@@ -249,6 +249,7 @@ MAP_TILE_SIZE = 256
 HTTP_TIMEOUT = 15
 MAX_MERCATOR_LATITUDE = 85.05112878
 MAP_BACKGROUND_COLOR = (240, 240, 240, 255)
+MAP_UNAVAILABLE_MESSAGE = 'Map unavailable: unable to load map tiles'
 OPENSTREETMAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 TOMORROW_TILE_URLS = (
     "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey={api_key}",
@@ -256,15 +257,24 @@ TOMORROW_TILE_URLS = (
     "https://api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/{layer}/now.png?apikey={api_key}",
 )
 
+def redact_url(url):
+    if 'apikey=' not in url:
+        return url
+    prefix, key_part = url.split('apikey=', 1)
+    if '&' in key_part:
+        _, suffix = key_part.split('&', 1)
+        return f"{prefix}apikey=[REDACTED]&{suffix}"
+    return f"{prefix}apikey=[REDACTED]"
+
 def get_image(url):
     if not url:
         return None
     try:
         response = requests.get(url, timeout=HTTP_TIMEOUT)
-        if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/png'):
+        if response.status_code == 200 and response.headers.get('Content-Type', '').lower().startswith('image/png'):
             return Image.open(io.BytesIO(response.content)).convert('RGBA')
     except Exception as e:
-        print(f"Image download error for {url}: {e}")
+        print(f"Image download error for {redact_url(url)}: {e}")
     return None
 
 def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
@@ -450,7 +460,7 @@ def show_weather():
             try:
                 final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
                 if final_img is None:
-                    root.after(0, lambda: map_panel.config(image='', text='Map unavailable: unable to load map tiles'))
+                    root.after(0, lambda: map_panel.config(image='', text=MAP_UNAVAILABLE_MESSAGE))
                     return
                 def show_map():
                     tk_img = ImageTk.PhotoImage(final_img)
@@ -459,7 +469,7 @@ def show_weather():
                 root.after(0, show_map)
             except Exception as e:
                 print(f"Map rendering error: {e}")
-                root.after(0, lambda: map_panel.config(image='', text='Map unavailable: unable to load map tiles'))
+                root.after(0, lambda: map_panel.config(image='', text=MAP_UNAVAILABLE_MESSAGE))
         else:
             root.after(0, lambda: map_panel.config(image='', text='Map not available (no coordinates)'))
     threading.Thread(target=update_map, daemon=True).start()
@@ -628,8 +638,8 @@ if __name__ == "__main__":
     # Add API attributions
     attribution_tomorrow = ttk.Label(area_frame, text='Powered by Tomorrow.io', font=("Segoe UI", 10, "italic"))
     attribution_tomorrow.grid(row=2, column=3, sticky="se", padx=5, pady=2)
-    attribution_yandex = ttk.Label(area_frame, text='Map data © OpenStreetMap/Tomorrow.io', font=("Segoe UI", 10, "italic"))
-    attribution_yandex.grid(row=2, column=2, sticky="se", padx=5, pady=2)
+    attribution_map = ttk.Label(area_frame, text='Map data © OpenStreetMap/Tomorrow.io', font=("Segoe UI", 10, "italic"))
+    attribution_map.grid(row=2, column=2, sticky="se", padx=5, pady=2)
     attribution_openmeteo = ttk.Label(area_frame, text='Weather data © Open-Meteo', font=("Segoe UI", 10, "italic"))
     attribution_openmeteo.grid(row=2, column=0, sticky="sw", padx=5, pady=2)
     # Visual Crossing attribution as clickable link
