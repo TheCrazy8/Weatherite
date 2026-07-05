@@ -244,6 +244,86 @@ def get_google_static_map(lat, lon):
         pass
     return None
 
+MAP_IMAGE_SIZE = (450, 450)
+MAP_TILE_SIZE = 256
+HTTP_TIMEOUT = 15
+MAX_MERCATOR_LATITUDE = 85.05112878
+MAP_BACKGROUND_COLOR = (240, 240, 240, 255)
+MAP_UNAVAILABLE_MESSAGE = 'Map unavailable: unable to load map tiles'
+OPENSTREETMAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+TOMORROW_TILE_URLS = (
+    "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey={api_key}",
+    "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}/now.png?apikey={api_key}",
+    "https://api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/{layer}/now.png?apikey={api_key}",
+)
+
+def get_image(url):
+    if not url:
+        return None
+    try:
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        if response.status_code == 200 and response.headers.get('Content-Type', '').lower().startswith('image/png'):
+            return Image.open(io.BytesIO(response.content)).convert('RGBA')
+    except Exception as e:
+        print(f"Image download error: {e}")
+    return None
+
+def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
+    for url_template in TOMORROW_TILE_URLS:
+        overlay_tile = get_image(
+            url_template.format(
+                layer=layer_code,
+                z=zoom,
+                x=x_tile,
+                y=y_tile,
+                api_key=api_key,
+            )
+        )
+        if overlay_tile:
+            return overlay_tile
+    return None
+
+def latlon_to_world_pixel(lat, lon, zoom):
+    lat = max(min(lat, MAX_MERCATOR_LATITUDE), -MAX_MERCATOR_LATITUDE)
+    scale = MAP_TILE_SIZE * (2 ** zoom)
+    x = (lon + 180.0) / 360.0 * scale
+    lat_rad = math.radians(lat)
+    y = (1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * scale
+    return x, y
+
+def get_weather_map_image(lat, lon, zoom, layer_code=None, tomorrow_api_key=None):
+    width, height = MAP_IMAGE_SIZE
+    world_x, world_y = latlon_to_world_pixel(lat, lon, zoom)
+    left = world_x - (width / 2)
+    top = world_y - (height / 2)
+    tile_count = 2 ** zoom
+    start_x = int(math.floor(left / MAP_TILE_SIZE))
+    end_x = int(math.floor((left + width - 1) / MAP_TILE_SIZE))
+    start_y = int(math.floor(top / MAP_TILE_SIZE))
+    end_y = int(math.floor((top + height - 1) / MAP_TILE_SIZE))
+
+    base_canvas = Image.new('RGBA', MAP_IMAGE_SIZE, MAP_BACKGROUND_COLOR)
+    overlay_canvas = Image.new('RGBA', MAP_IMAGE_SIZE, (0, 0, 0, 0)) if layer_code and tomorrow_api_key else None
+
+    for tile_x in range(start_x, end_x + 1):
+        wrapped_x = tile_x % tile_count
+        dest_x = int((tile_x * MAP_TILE_SIZE) - left)
+        for tile_y in range(start_y, end_y + 1):
+            if not 0 <= tile_y < tile_count:
+                continue
+            dest_y = int((tile_y * MAP_TILE_SIZE) - top)
+            base_tile = get_image(OPENSTREETMAP_TILE_URL.format(z=zoom, x=wrapped_x, y=tile_y))
+            if base_tile:
+                base_canvas.paste(base_tile, (dest_x, dest_y))
+            if overlay_canvas:
+                overlay_tile = get_tomorrow_overlay_tile(layer_code, zoom, wrapped_x, tile_y, tomorrow_api_key)
+                if overlay_tile:
+                    overlay_canvas.paste(overlay_tile, (dest_x, dest_y), overlay_tile)
+
+    if overlay_canvas:
+        base_canvas.alpha_composite(overlay_canvas)
+    return base_canvas
+
 # OpenWeatherMap layers supported: clouds_new, precipitation_new, pressure_new, wind_new, temp_new
 OPENWEATHERMAP_LAYERS = [
     ("None", None),
@@ -333,7 +413,6 @@ def show_weather():
     if lat is None or lon is None:
         lat, lon = get_coordinates(city)
     om_current = ""
-    tomorrow_icon_img = None
     tomorrow_desc = ""
     if lat is not None and lon is not None:
         om_data = get_weather_openmeteo(lat, lon, units)
@@ -346,16 +425,6 @@ def show_weather():
         code = get_tomorrow_weathercodefullday(lat, lon, tomorrow_api_key)
         if code is not None:
             tomorrow_desc = TOMORROW_WEATHER_CODES.get(code, (f"Unknown ({code})", ""))[0]
-            icon_url = get_tomorrow_icon_url(code)
-            if icon_url:
-                try:
-                    response = requests.get(icon_url)
-                    if response.status_code == 200:
-                        img_data = response.content
-                        img = Image.open(io.BytesIO(img_data)).resize((48, 48))
-                        tomorrow_icon_img = ImageTk.PhotoImage(img)
-                except Exception as e:
-                    print(f"Tomorrow.io icon error: {e}")
     else:
         om_current = "Could not get coordinates for Open-Meteo."
     # Fill text areas
@@ -365,10 +434,6 @@ def show_weather():
     if tomorrow_desc:
         current_text.insert(tk.END, f"\n--- Tomorrow.io ---\nWeather: {tomorrow_desc}")
     current_text.config(state='disabled')
-    # Show icon in map_panel (or create a new label for icon)
-    if tomorrow_icon_img:
-        map_panel.image = tomorrow_icon_img
-        map_panel.config(image=tomorrow_icon_img)
     forecast_text.config(state='normal')
     forecast_text.delete(1.0, tk.END)
     forecast_text.insert(tk.END, f"{vc_forecast}")
@@ -383,58 +448,21 @@ def show_weather():
             layer = layer_var.get()
             zoom = int(zoom_var.get())
             layer_code = tomorrow_layers.get(layer, None)
-            # Get Yandex base map URL
-            yandex_url = (
-                f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&size=450,450&z={zoom}&l=map&pt={lon},{lat},pm2rdm&lang=en_US"
-            )
-            # Get Tomorrow.io overlay URL (if selected)
-            overlay_url = None
-            if tomorrow_api_key and layer_code:
-                import math
-                def latlon_to_tile(lat, lon, zoom):
-                    lat_rad = math.radians(lat)
-                    n = 2.0 ** zoom
-                    x_tile = int((lon + 180.0) / 360.0 * n)
-                    y_tile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
-                    return x_tile, y_tile
-                x_tile, y_tile = latlon_to_tile(lat, lon, zoom)
-                overlay_url = f"https://api.tomorrow.io/v4/map/tile/{zoom}/{x_tile}/{y_tile}/{layer_code}/now.png?apikey={tomorrow_api_key}"
-            def get_image(url):
-                try:
-                    response = requests.get(url)
-                    if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/png'):
-                        return Image.open(io.BytesIO(response.content)).convert('RGBA')
-                except Exception as e:
-                    print(f"Image download error: {e}")
-                return None
-            # Download base map
-            base_img = get_image(yandex_url)
-            # Download overlay if needed
-            overlay_img = get_image(overlay_url) if overlay_url else None
-            # Composite overlay on base map
-            final_img = None
-            if base_img and overlay_img:
-                # Resize overlay to match base map if needed
-                try:
-                    resample = Image.Resampling.LANCZOS
-                except AttributeError:
-                    resample = Image.LANCZOS
-                overlay_img = overlay_img.resize(base_img.size, resample)
-                final_img = base_img.copy()
-                final_img.alpha_composite(overlay_img)
-            elif base_img:
-                final_img = base_img
-            elif overlay_img:
-                final_img = overlay_img
-            # Display result
-            if final_img:
-                tk_img = ImageTk.PhotoImage(final_img)
-                map_panel.config(image=tk_img, text='')
-                map_panel.image = tk_img
-            else:
-                map_panel.config(image='', text='Map not available (download/content error)')
+            try:
+                final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
+                if final_img is None:
+                    root.after(0, lambda: map_panel.config(image='', text=MAP_UNAVAILABLE_MESSAGE))
+                    return
+                def show_map():
+                    tk_img = ImageTk.PhotoImage(final_img)
+                    map_panel.config(image=tk_img, text='')
+                    map_panel.image = tk_img
+                root.after(0, show_map)
+            except Exception as e:
+                print(f"Map rendering error: {e}")
+                root.after(0, lambda: map_panel.config(image='', text=MAP_UNAVAILABLE_MESSAGE))
         else:
-            map_panel.config(image='', text='Map not available (no coordinates)')
+            root.after(0, lambda: map_panel.config(image='', text='Map not available (no coordinates)'))
     threading.Thread(target=update_map, daemon=True).start()
 
 if __name__ == "__main__":
@@ -601,8 +629,8 @@ if __name__ == "__main__":
     # Add API attributions
     attribution_tomorrow = ttk.Label(area_frame, text='Powered by Tomorrow.io', font=("Segoe UI", 10, "italic"))
     attribution_tomorrow.grid(row=2, column=3, sticky="se", padx=5, pady=2)
-    attribution_yandex = ttk.Label(area_frame, text='Map data © Yandex/Tomorrow.io', font=("Segoe UI", 10, "italic"))
-    attribution_yandex.grid(row=2, column=2, sticky="se", padx=5, pady=2)
+    attribution_map = ttk.Label(area_frame, text='Map data © OpenStreetMap/Tomorrow.io', font=("Segoe UI", 10, "italic"))
+    attribution_map.grid(row=2, column=2, sticky="se", padx=5, pady=2)
     attribution_openmeteo = ttk.Label(area_frame, text='Weather data © Open-Meteo', font=("Segoe UI", 10, "italic"))
     attribution_openmeteo.grid(row=2, column=0, sticky="sw", padx=5, pady=2)
     # Visual Crossing attribution as clickable link
