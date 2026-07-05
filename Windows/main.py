@@ -247,17 +247,36 @@ def get_google_static_map(lat, lon):
 MAP_IMAGE_SIZE = (450, 450)
 MAP_TILE_SIZE = 256
 OPENSTREETMAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-TOMORROW_TILE_URL = "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey={api_key}"
+TOMORROW_TILE_URLS = (
+    "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}.png?apikey={api_key}",
+    "https://api.tomorrow.io/v4/map/tile/{layer}/{z}/{x}/{y}/now.png?apikey={api_key}",
+    "https://api.tomorrow.io/v4/map/tile/{z}/{x}/{y}/{layer}/now.png?apikey={api_key}",
+)
 
 def get_image(url):
     if not url:
         return None
     try:
         response = requests.get(url, timeout=15)
-        if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/'):
+        if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/png'):
             return Image.open(io.BytesIO(response.content)).convert('RGBA')
     except Exception as e:
         print(f"Image download error: {e}")
+    return None
+
+def get_tomorrow_overlay_tile(layer_code, zoom, x_tile, y_tile, api_key):
+    for url_template in TOMORROW_TILE_URLS:
+        overlay_tile = get_image(
+            url_template.format(
+                layer=layer_code,
+                z=zoom,
+                x=x_tile,
+                y=y_tile,
+                api_key=api_key,
+            )
+        )
+        if overlay_tile:
+            return overlay_tile
     return None
 
 def latlon_to_world_pixel(lat, lon, zoom):
@@ -293,15 +312,7 @@ def get_weather_map_image(lat, lon, zoom, layer_code=None, tomorrow_api_key=None
             if base_tile:
                 base_canvas.paste(base_tile, (dest_x, dest_y))
             if overlay_canvas:
-                overlay_tile = get_image(
-                    TOMORROW_TILE_URL.format(
-                        layer=layer_code,
-                        z=zoom,
-                        x=wrapped_x,
-                        y=tile_y,
-                        api_key=tomorrow_api_key,
-                    )
-                )
+                overlay_tile = get_tomorrow_overlay_tile(layer_code, zoom, wrapped_x, tile_y, tomorrow_api_key)
                 if overlay_tile:
                     overlay_canvas.paste(overlay_tile, (dest_x, dest_y), overlay_tile)
 
@@ -436,7 +447,7 @@ def show_weather():
             try:
                 final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
                 if final_img is None:
-                    root.after(0, lambda: map_panel.config(image='', text='Map unavailable: failed to render tiles'))
+                    root.after(0, lambda: map_panel.config(image='', text='Map unavailable: unable to load map tiles'))
                     return
                 def show_map():
                     tk_img = ImageTk.PhotoImage(final_img)
@@ -444,7 +455,8 @@ def show_weather():
                     map_panel.image = tk_img
                 root.after(0, show_map)
             except Exception as e:
-                root.after(0, lambda error=str(e): map_panel.config(image='', text=f'Map error: {error}'))
+                print(f"Map rendering error: {e}")
+                root.after(0, lambda: map_panel.config(image='', text='Map unavailable: unable to load map tiles'))
         else:
             root.after(0, lambda: map_panel.config(image='', text='Map not available (no coordinates)'))
     threading.Thread(target=update_map, daemon=True).start()
