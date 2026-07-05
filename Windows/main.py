@@ -436,7 +436,7 @@ def show_weather():
             try:
                 final_img = get_weather_map_image(lat, lon, zoom, layer_code, tomorrow_api_key)
                 if final_img is None:
-                    root.after(0, lambda: map_panel.config(image='', text='Map not available (render error)'))
+                    root.after(0, lambda: map_panel.config(image='', text='Map unavailable: failed to render tiles'))
                     return
                 def show_map():
                     tk_img = ImageTk.PhotoImage(final_img)
